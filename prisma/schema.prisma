@@ -1,0 +1,256 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── NextAuth Models ───────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  timezone      String    @default("UTC")
+
+  accounts Account[]
+  sessions Session[]
+  leads    Lead[]
+  emails   Email[]
+  meetings Meeting[]
+  callLogs CallLog[]
+  briefings Briefing[]
+  tasks    Task[]
+  notes    Note[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Business Models ───────────────────────────────────────
+
+model Lead {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  company   String?
+  status    String   @default("NEW") // NEW, CONTACTED, QUALIFIED, PROPOSAL, NEGOTIATION, CLOSED_WON, CLOSED_LOST
+  stage     String   @default("QUALIFICATION") // QUALIFICATION, DISCOVERY, PROPOSAL, NEGOTIATION, CLOSED
+  phone     String?
+  role      String?
+  website   String?
+  source    String   @default("GMAIL") // GMAIL, MANUAL, CALENDAR
+
+  lastContact DateTime?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  emails    Email[]
+  meetings  Meeting[]
+  callLogs  CallLog[]
+  briefings Briefing[]
+  tasks     Task[]
+  notes     Note[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([email, userId])
+  @@index([userId])
+  @@index([status])
+}
+
+model Email {
+  id        String   @id @default(cuid())
+  gmailId   String   @unique
+  threadId  String?
+  fromEmail String
+  fromName  String?
+  toEmail   String
+  subject   String?
+  snippet   String?  // Short preview of body
+  body      String?  // Full body text
+  date      DateTime
+  isInbound Boolean  @default(true) // true = received, false = sent
+
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  userId String
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@index([userId])
+  @@index([threadId])
+}
+
+model Meeting {
+  id              String   @id @default(cuid())
+  calendarEventId String   @unique
+  title           String
+  description     String?
+  startTime       DateTime
+  endTime         DateTime
+  location        String?  // URL or physical location
+  participants    String   // JSON array of {email, name, status}
+  status          String   @default("CONFIRMED") // CONFIRMED, CANCELLED, TENTATIVE
+
+  leadId   String?
+  lead     Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  callLogs  CallLog[]
+  briefings Briefing[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+  @@index([userId])
+  @@index([startTime])
+}
+
+model CallLog {
+  id       String @id @default(cuid())
+  rawText  String // The transcript/summary/notes pasted by user
+  type     String @default("SUMMARY") // FULL_TRANSCRIPT, SUMMARY, MANUAL_NOTES
+  outcome  String? // SUCCESSFUL, RESCHEDULED, NOT_INTERESTED, NO_ANSWER
+
+  // AI analysis results (stored as JSON strings)
+  aiSummary        String?
+  aiKeyPoints      String? // JSON array
+  aiAgreements     String? // JSON array
+  aiOpenQuestions  String? // JSON array
+  aiNextSteps      String? // JSON array of {action, owner, deadline}
+  aiRecommendedStatus String?
+  aiEngagementLevel   String? // LOW, MEDIUM, HIGH
+
+  meetingId String?
+  meeting   Meeting? @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@index([userId])
+}
+
+model Briefing {
+  id      String @id @default(cuid())
+  content String // Markdown content
+
+  meetingId String?
+  meeting   Meeting? @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+  @@index([meetingId])
+}
+
+model Task {
+  id        String   @id @default(cuid())
+  title     String
+  dueDate   DateTime?
+  priority  String   @default("MEDIUM") // LOW, MEDIUM, HIGH
+  completed Boolean  @default(false)
+  completedAt DateTime?
+  owner     String   @default("us") // "us" or "client"
+  source    String   @default("MANUAL") // MANUAL, AI_ANALYSIS
+
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  userId String
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+  @@index([userId])
+  @@index([completed])
+  @@index([dueDate])
+}
+
+model Note {
+  id      String @id @default(cuid())
+  content String
+
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+}
+
+// ─── Sync State ────────────────────────────────────────────
+
+model SyncState {
+  id        String @id @default(cuid())
+  userId    String
+  provider  String // "gmail", "calendar"
+  historyId String? // Gmail historyId for incremental sync
+  syncToken String? // Calendar sync token
+  lastSyncAt DateTime?
+
+  @@unique([userId, provider])
+}
