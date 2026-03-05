@@ -18,8 +18,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { formatDate, formatDateTime, formatRelativeTime, LEAD_STATUSES } from "@/lib/utils";
+import { formatDate, formatDateTime, formatRelativeTime, LEAD_STATUSES, type LeadStage } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
+import { StageProgress } from "@/components/leads/stage-progress";
+import { QualificationChecklist } from "@/components/leads/qualification-checklist";
+import { useToast } from "@/components/ui/toast";
 
 interface LeadDetail {
   id: string;
@@ -98,6 +101,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<Record<string, unknown> | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const { toast } = useToast();
 
   async function fetchLead() {
     const res = await fetch(`/api/leads/${id}`);
@@ -119,6 +123,17 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
+    toast("Status updated");
+    fetchLead();
+  }
+
+  async function updateStage(stage: LeadStage) {
+    await fetch(`/api/leads/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage }),
+    });
+    toast(`Stage updated to ${stage}`);
     fetchLead();
   }
 
@@ -130,6 +145,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       body: JSON.stringify({ content: newNote, leadId: id }),
     });
     setNewNote("");
+    toast("Note added");
     fetchLead();
   }
 
@@ -141,6 +157,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       body: JSON.stringify({ title: newTaskTitle, leadId: id }),
     });
     setNewTaskTitle("");
+    toast("Task created");
     fetchLead();
   }
 
@@ -516,6 +533,23 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
         {/* Sidebar */}
         <div className="space-y-6">
+          {/* Sales Stage */}
+          <Card>
+            <CardContent className="py-4">
+              <StageProgress
+                currentStage={lead.stage}
+                onStageChange={updateStage}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Qualification Checklist */}
+          <Card>
+            <CardContent className="py-4">
+              <QualificationChecklist stage={lead.stage} />
+            </CardContent>
+          </Card>
+
           {/* Tasks */}
           <Card>
             <CardHeader>
