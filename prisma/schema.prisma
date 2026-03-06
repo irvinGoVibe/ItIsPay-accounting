@@ -26,6 +26,8 @@ model User {
   briefings Briefing[]
   tasks    Task[]
   notes    Note[]
+  flowOfFunds FlowOfFunds[]
+  summaries   LeadSummary[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -90,12 +92,14 @@ model Lead {
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  emails    Email[]
-  meetings  Meeting[]
-  callLogs  CallLog[]
-  briefings Briefing[]
-  tasks     Task[]
-  notes     Note[]
+  emails      Email[]
+  meetings    Meeting[]
+  callLogs    CallLog[]
+  briefings   Briefing[]
+  tasks       Task[]
+  notes       Note[]
+  flowOfFunds FlowOfFunds[]
+  summaries   LeadSummary[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -240,6 +244,56 @@ model Note {
   updatedAt DateTime @updatedAt
 
   @@index([leadId])
+}
+
+// ─── Flow of Funds ────────────────────────────────────────
+
+model FlowOfFunds {
+  id        String   @id @default(cuid())
+  version   Int      @default(1)
+  trigger   String   @default("MANUAL") // MANUAL, EMAIL_SYNC, CALL_LOG
+
+  paymentDirection       String?  // INBOUND, OUTBOUND, BOTH
+  sourceOfFunds          String?
+  destinationOfFunds     String?
+  paymentMethods         String?  // JSON array: ["cards","bank_transfers","crypto"]
+  currencies             String?  // JSON array: ["USD","EUR"]
+  expectedVolume         String?  // "$500K/month"
+  feeStructure           String?
+  settlementTimeline     String?  // "T+1", "Real-time"
+  complianceRequirements String?
+  integrationType        String?  // API, HOSTED_PAGE, PLUGIN, WHITE_LABEL
+  riskLevel              String?  // LOW, MEDIUM, HIGH, CRITICAL
+  geographicScope        String?  // JSON array: ["US","EU","LATAM"]
+  businessModel          String?  // MARKETPLACE, SAAS, ECOMMERCE, GAMBLING, TRAVEL
+  keyStakeholders        String?
+  specialRequirements    String?
+  confidenceScore        Int?     // 0-100
+
+  leadId    String
+  lead      Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@index([leadId, version])
+  @@index([userId])
+}
+
+model LeadSummary {
+  id      String @id @default(cuid())
+  content String
+  type    String @default("AI_SUMMARY") // AI_SUMMARY, FULL_TRANSCRIPT
+
+  leadId    String
+  lead      Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@index([userId])
 }
 
 // ─── Sync State ────────────────────────────────────────────

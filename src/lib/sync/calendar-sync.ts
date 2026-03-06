@@ -6,7 +6,7 @@ export async function syncCalendar(userId: string) {
   const auth = await getGoogleAuth(userId);
   const calendar = google.calendar({ version: "v3", auth: auth as never });
 
-  // Get user's email to filter out internal meetings
+  // Get user's email for lead matching
   const userAccount = await prisma.account.findFirst({
     where: { userId, provider: "google" },
     include: { user: true },
@@ -19,44 +19,10 @@ export async function syncCalendar(userId: string) {
   const timeMax = new Date();
   timeMax.setDate(timeMax.getDate() + 30);
 
-  const syncState = await prisma.syncState.findUnique({
-    where: { userId_provider: { userId, provider: "calendar" } },
-  });
-
+  // Always do full sync to catch all events
   let events: Array<ReturnType<typeof parseEvent>> = [];
-  let nextSyncToken: string | undefined;
-
-  try {
-    if (syncState?.syncToken) {
-      // Incremental sync
-      const response = await calendar.events.list({
-        calendarId: "primary",
-        syncToken: syncState.syncToken,
-      });
-      events = (response.data.items ?? []).map(parseEvent);
-      nextSyncToken = response.data.nextSyncToken ?? undefined;
-    } else {
-      // Full sync
-      let pageToken: string | undefined;
-      do {
-        const response = await calendar.events.list({
-          calendarId: "primary",
-          timeMin: timeMin.toISOString(),
-          timeMax: timeMax.toISOString(),
-          singleEvents: true,
-          orderBy: "startTime",
-          maxResults: 250,
-          pageToken,
-        });
-        events.push(...(response.data.items ?? []).map(parseEvent));
-        pageToken = response.data.nextPageToken ?? undefined;
-        if (!pageToken) {
-          nextSyncToken = response.data.nextSyncToken ?? undefined;
-        }
-      } while (pageToken);
-    }
-  } catch {
-    // If syncToken is invalid, do full sync
+  let pageToken: string | undefined;
+  do {
     const response = await calendar.events.list({
       calendarId: "primary",
       timeMin: timeMin.toISOString(),
@@ -64,38 +30,53 @@ export async function syncCalendar(userId: string) {
       singleEvents: true,
       orderBy: "startTime",
       maxResults: 250,
+      pageToken,
     });
-    events = (response.data.items ?? []).map(parseEvent);
-    nextSyncToken = response.data.nextSyncToken ?? undefined;
-  }
+    events.push(...(response.data.items ?? []).map(parseEvent));
+    pageToken = response.data.nextPageToken ?? undefined;
+  } while (pageToken);
 
   let imported = 0;
+  let deleted = 0;
+  let skipped = 0;
+
+  // Track which calendarEventIds we see from Google
+  const seenEventIds = new Set<string>();
 
   for (const event of events) {
-    if (!event || !event.calendarEventId) continue;
+    if (!event || !event.calendarEventId) {
+      skipped++;
+      continue;
+    }
 
     // Skip all-day events or events missing time data
-    if (!event.startTime || !event.endTime) continue;
+    if (!event.startTime || !event.endTime) {
+      skipped++;
+      continue;
+    }
 
-    // Skip cancelled events
+    // Delete cancelled events from CRM
     if (event.status === "CANCELLED") {
       await prisma.meeting.deleteMany({
         where: { calendarEventId: event.calendarEventId },
       });
+      deleted++;
       continue;
     }
 
-    // Find external participants (not the user)
-    const participants = event.participants.filter(
+    seenEventIds.add(event.calendarEventId);
+
+    // All participants (including user — for display purposes)
+    const allParticipants = event.participants;
+
+    // External participants (not the user) — used for lead matching
+    const externalParticipants = event.participants.filter(
       (p) => p.email.toLowerCase() !== userEmail
     );
 
-    // Skip internal-only meetings (no external participants)
-    if (participants.length === 0) continue;
-
-    // Try to match a lead
+    // Try to match a lead from external participants
     let leadId: string | null = null;
-    for (const participant of participants) {
+    for (const participant of externalParticipants) {
       const lead = await prisma.lead.findUnique({
         where: {
           email_userId: { email: participant.email.toLowerCase(), userId },
@@ -107,11 +88,10 @@ export async function syncCalendar(userId: string) {
       }
     }
 
-    // At this point startTime and endTime are guaranteed non-null
     const startTime = event.startTime!;
     const endTime = event.endTime!;
 
-    // Upsert meeting
+    // Upsert meeting — re-creates even if previously deleted from CRM
     await prisma.meeting.upsert({
       where: { calendarEventId: event.calendarEventId },
       update: {
@@ -120,7 +100,7 @@ export async function syncCalendar(userId: string) {
         startTime,
         endTime,
         location: event.location,
-        participants: JSON.stringify(participants),
+        participants: JSON.stringify(allParticipants),
         status: event.status,
         leadId,
       },
@@ -131,7 +111,7 @@ export async function syncCalendar(userId: string) {
         startTime,
         endTime,
         location: event.location,
-        participants: JSON.stringify(participants),
+        participants: JSON.stringify(allParticipants),
         status: event.status,
         leadId,
         userId,
@@ -140,22 +120,25 @@ export async function syncCalendar(userId: string) {
     imported++;
   }
 
-  // Save sync token
-  await prisma.syncState.upsert({
-    where: { userId_provider: { userId, provider: "calendar" } },
-    update: {
-      syncToken: nextSyncToken,
-      lastSyncAt: new Date(),
-    },
-    create: {
+  // Remove CRM meetings that no longer exist in Google Calendar
+  const orphaned = await prisma.meeting.deleteMany({
+    where: {
       userId,
-      provider: "calendar",
-      syncToken: nextSyncToken,
-      lastSyncAt: new Date(),
+      calendarEventId: { notIn: [...seenEventIds] },
+      // Only delete within the sync time range
+      startTime: { gte: timeMin, lte: timeMax },
     },
   });
+  deleted += orphaned.count;
 
-  return { imported };
+  // Update last sync time
+  await prisma.syncState.upsert({
+    where: { userId_provider: { userId, provider: "calendar" } },
+    update: { lastSyncAt: new Date() },
+    create: { userId, provider: "calendar", lastSyncAt: new Date() },
+  });
+
+  return { imported, deleted, skipped, totalEvents: events.length };
 }
 
 interface ParsedEvent {

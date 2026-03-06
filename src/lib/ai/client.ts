@@ -1,8 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Lazy-init to ensure env vars are loaded at runtime, not at module parse time
+let _anthropic: Anthropic | null = null;
+function getClient(): Anthropic {
+  if (!_anthropic) {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new Error("ANTHROPIC_API_KEY is not set. Add it to .env.local");
+    }
+    _anthropic = new Anthropic({ apiKey });
+  }
+  return _anthropic;
+}
 
 export async function generateAIResponse(
   systemPrompt: string,
@@ -12,7 +21,7 @@ export async function generateAIResponse(
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await anthropic.messages.create({
+      const response = await getClient().messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 4096,
         system: systemPrompt,

@@ -10,11 +10,13 @@ export async function POST() {
 
   try {
     const result = await syncCalendar(session.user.id);
-    return NextResponse.json(result);
+    return NextResponse.json({ success: true, ...result });
   } catch (error) {
     console.error("Calendar sync error:", error);
+    const message =
+      error instanceof Error ? error.message : "Calendar sync failed";
     return NextResponse.json(
-      { error: "Calendar sync failed" },
+      { error: message, success: false },
       { status: 500 }
     );
   }

@@ -12,16 +12,37 @@ import {
   Plus,
   Sparkles,
   Send,
+  Copy,
+  Pencil,
+  DollarSign,
+  History,
+  MessageSquare,
+  Lightbulb,
+  ChevronDown,
+  ChevronRight,
+  User,
+  Building2,
+  ScrollText,
+  ArrowRightCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { formatDate, formatDateTime, formatRelativeTime, LEAD_STATUSES, type LeadStage } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import { StageProgress } from "@/components/leads/stage-progress";
 import { QualificationChecklist } from "@/components/leads/qualification-checklist";
+import { FofDisplay, FofEmpty, type FlowOfFundsRecord } from "@/components/leads/fof-display";
+import { FofHistory } from "@/components/leads/fof-history";
+import { FofEditForm } from "@/components/leads/fof-edit-form";
 import { useToast } from "@/components/ui/toast";
 
 interface LeadDetail {
@@ -39,8 +60,11 @@ interface LeadDetail {
     id: string;
     subject: string | null;
     snippet: string | null;
+    body: string | null;
+    threadId: string | null;
     fromEmail: string;
     fromName: string | null;
+    toEmail: string;
     date: string;
     isInbound: boolean;
   }>;
@@ -78,7 +102,10 @@ interface LeadDetail {
     content: string;
     createdAt: string;
   }>;
+  flowOfFunds: FlowOfFundsRecord[];
 }
+
+type TabKey = "timeline" | "conversation" | "calllogs" | "fof" | "recommendations";
 
 const statusBadgeVariant: Record<string, "default" | "secondary" | "success" | "warning" | "destructive"> = {
   NEW: "default",
@@ -94,20 +121,63 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"timeline" | "calllog" | "briefing">("timeline");
+  const [activeTab, setActiveTab] = useState<TabKey>("timeline");
   const [newNote, setNewNote] = useState("");
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const { toast } = useToast();
+
+  // Call Log form state
   const [callLogText, setCallLogText] = useState("");
   const [callLogType, setCallLogType] = useState("SUMMARY");
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<Record<string, unknown> | null>(null);
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const { toast } = useToast();
+  const [showCallLogModal, setShowCallLogModal] = useState(false);
+
+  // Call log detail expansion
+  const [expandedCallLog, setExpandedCallLog] = useState<string | null>(null);
+
+  // Conversation expanded messages
+  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
+  function toggleMessage(id: string) {
+    setExpandedMessages((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // FOF state
+  const [generatingFof, setGeneratingFof] = useState(false);
+  const [fofVersions, setFofVersions] = useState<FlowOfFundsRecord[]>([]);
+  const [selectedFof, setSelectedFof] = useState<FlowOfFundsRecord | null>(null);
+  const [showFofEdit, setShowFofEdit] = useState(false);
+  const [showFofHistory, setShowFofHistory] = useState(false);
+
+  // AI Recommendations state (3 sections)
+  type RecSection = "company_profile" | "sales_script" | "next_steps";
+  const [recData, setRecData] = useState<Record<RecSection, string>>({
+    company_profile: "",
+    sales_script: "",
+    next_steps: "",
+  });
+  const [recLoading, setRecLoading] = useState<Record<RecSection, boolean>>({
+    company_profile: false,
+    sales_script: false,
+    next_steps: false,
+  });
+  const [activeRecSection, setActiveRecSection] = useState<RecSection>("company_profile");
+  const [aiLang, setAiLang] = useState<"en" | "ru">("en");
 
   async function fetchLead() {
     const res = await fetch(`/api/leads/${id}`);
     if (res.ok) {
       const data = await res.json();
       setLead(data);
+      if (data.flowOfFunds?.length > 0) {
+        setFofVersions(data.flowOfFunds);
+        setSelectedFof(data.flowOfFunds[0]);
+      }
     }
     setLoading(false);
   }
@@ -116,6 +186,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     fetchLead();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // --- Actions ---
 
   async function updateStatus(status: string) {
     await fetch(`/api/leads/${id}`, {
@@ -170,6 +242,34 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     fetchLead();
   }
 
+  // Save call log directly (no AI)
+  const [savingCallLog, setSavingCallLog] = useState(false);
+  async function saveCallLog() {
+    if (!callLogText.trim()) return;
+    setSavingCallLog(true);
+    try {
+      await fetch("/api/call-logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId: id,
+          text: callLogText,
+          type: callLogType,
+          skipAnalysis: true,
+        }),
+      });
+      setCallLogText("");
+      setShowCallLogModal(false);
+      toast("Call log added");
+      fetchLead();
+    } catch {
+      toast("Failed to save call log");
+    } finally {
+      setSavingCallLog(false);
+    }
+  }
+
+  // Save + AI analysis
   async function analyzeCallLog() {
     if (!callLogText.trim()) return;
     setAnalyzing(true);
@@ -186,7 +286,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       const data = await res.json();
       setAnalysisResult(data);
     } catch {
-      // Show in UI
+      toast("Analysis failed");
     } finally {
       setAnalyzing(false);
     }
@@ -202,8 +302,57 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     });
     setCallLogText("");
     setAnalysisResult(null);
+    setShowCallLogModal(false);
+    toast("Call log saved & lead updated");
     fetchLead();
   }
+
+  async function generateFof() {
+    setGeneratingFof(true);
+    try {
+      const res = await fetch("/api/fof", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId: id, lang: aiLang }),
+      });
+      if (res.ok) {
+        toast("FOF generated");
+        fetchLead();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("FOF generation server error:", res.status, err);
+        toast(`FOF error: ${(err as { error?: string }).error || res.statusText}`);
+      }
+    } catch (error) {
+      console.error("FOF generation failed:", error);
+      toast("FOF generation failed — check console");
+    } finally {
+      setGeneratingFof(false);
+    }
+  }
+
+  async function generateRecSection(section: RecSection) {
+    setRecLoading((prev) => ({ ...prev, [section]: true }));
+    try {
+      const res = await fetch(`/api/leads/${id}/recommendations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: section, lang: aiLang }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRecData((prev) => ({ ...prev, [section]: data.content }));
+      } else {
+        toast("Failed to generate — check console");
+      }
+    } catch {
+      toast("Failed to generate — check console");
+    } finally {
+      setRecLoading((prev) => ({ ...prev, [section]: false }));
+    }
+  }
+
+  // --- Rendering ---
 
   if (loading) {
     return <div className="text-center py-12 text-gray-400">Loading...</div>;
@@ -213,37 +362,139 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     return <div className="text-center py-12 text-gray-400">Lead not found</div>;
   }
 
-  // Build timeline from all activities
+  // Build timeline (sorted newest first)
   const timeline = [
-    ...lead.emails.map((e) => ({
-      type: "email" as const,
-      date: new Date(e.date),
-      data: e,
-    })),
-    ...lead.meetings.map((m) => ({
-      type: "meeting" as const,
-      date: new Date(m.startTime),
-      data: m,
-    })),
-    ...lead.callLogs.map((c) => ({
-      type: "calllog" as const,
-      date: new Date(c.createdAt),
-      data: c,
-    })),
-    ...lead.notes.map((n) => ({
-      type: "note" as const,
-      date: new Date(n.createdAt),
-      data: n,
-    })),
+    ...lead.emails.map((e) => ({ type: "email" as const, date: new Date(e.date), data: e })),
+    ...lead.meetings.map((m) => ({ type: "meeting" as const, date: new Date(m.startTime), data: m })),
+    ...lead.callLogs.map((c) => ({ type: "calllog" as const, date: new Date(c.createdAt), data: c })),
+    ...lead.notes.map((n) => ({ type: "note" as const, date: new Date(n.createdAt), data: n })),
   ].sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  // Build conversation threads (sorted oldest first for natural reading)
+  const emailsByThread = new Map<string, LeadDetail["emails"]>();
+  const sortedEmails = [...lead.emails].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+  for (const email of sortedEmails) {
+    const threadKey = email.threadId || email.id;
+    if (!emailsByThread.has(threadKey)) {
+      emailsByThread.set(threadKey, []);
+    }
+    emailsByThread.get(threadKey)!.push(email);
+  }
+  // Sort threads by latest email date (newest thread first)
+  const threads = Array.from(emailsByThread.entries()).sort((a, b) => {
+    const aLatest = new Date(a[1][a[1].length - 1].date).getTime();
+    const bLatest = new Date(b[1][b[1].length - 1].date).getTime();
+    return bLatest - aLatest;
+  });
+
+  // Call Log form content (used in modal and inline)
+  const callLogFormContent = (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        {["SUMMARY", "FULL_TRANSCRIPT", "MANUAL_NOTES"].map((type) => (
+          <button
+            key={type}
+            onClick={() => setCallLogType(type)}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
+              callLogType === type
+                ? "bg-blue-100 text-blue-700"
+                : "bg-gray-100 text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            {type.replace(/_/g, " ")}
+          </button>
+        ))}
+      </div>
+      <Textarea
+        placeholder="Paste your call transcript, summary, or notes here..."
+        value={callLogText}
+        onChange={(e) => setCallLogText(e.target.value)}
+        className="min-h-[200px]"
+      />
+      <div className="flex gap-2">
+        <Button onClick={saveCallLog} disabled={savingCallLog || analyzing || !callLogText.trim()}>
+          <Plus className="h-4 w-4" />
+          {savingCallLog ? "Saving..." : "Add"}
+        </Button>
+        <Button variant="outline" onClick={analyzeCallLog} disabled={analyzing || savingCallLog || !callLogText.trim()}>
+          <Sparkles className="h-4 w-4" />
+          {analyzing ? "Analyzing..." : "Add & Analyze with AI"}
+        </Button>
+      </div>
+
+      {analysisResult && (
+        <div className="space-y-4 border-t pt-4">
+          <h3 className="font-semibold text-gray-900">Analysis Results</h3>
+          {(() => {
+            const analysis = analysisResult.analysis as Record<string, unknown>;
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card>
+                  <CardContent className="py-3">
+                    <h4 className="text-sm font-medium text-gray-500 mb-2">Summary</h4>
+                    <p className="text-sm">{analysis.summary as string}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="py-3">
+                    <h4 className="text-sm font-medium text-gray-500 mb-2">Outcome</h4>
+                    <Badge>{analysis.outcome as string}</Badge>
+                    <span className="ml-2 text-sm">Engagement: {analysis.engagementLevel as string}</span>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="py-3">
+                    <h4 className="text-sm font-medium text-gray-500 mb-2">Key Points</h4>
+                    <ul className="text-sm space-y-1">
+                      {(analysis.keyPoints as string[]).map((p, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span className="text-blue-500">-</span> {p}
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="py-3">
+                    <h4 className="text-sm font-medium text-gray-500 mb-2">Next Steps</h4>
+                    <ul className="text-sm space-y-1">
+                      {(analysis.nextSteps as Array<{ action: string; owner: string; deadline: string }>).map(
+                        (step, i) => (
+                          <li key={i} className="flex gap-2">
+                            <span className="text-green-500">-</span>
+                            {step.action} ({step.owner}, {step.deadline})
+                          </li>
+                        )
+                      )}
+                    </ul>
+                  </CardContent>
+                </Card>
+              </div>
+            );
+          })()}
+          <div className="flex gap-2">
+            <Button onClick={applyAnalysis}>Save &amp; Update Lead</Button>
+            <Button variant="outline" onClick={() => setAnalysisResult(null)}>Discard</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+    { key: "timeline", label: "Timeline", icon: <Calendar className="h-4 w-4" /> },
+    { key: "conversation", label: "Conversation", icon: <MessageSquare className="h-4 w-4" /> },
+    { key: "calllogs", label: "Call Logs", icon: <Phone className="h-4 w-4" /> },
+    { key: "fof", label: "Flow of Funds", icon: <DollarSign className="h-4 w-4" /> },
+    { key: "recommendations", label: "AI Recommendations", icon: <Lightbulb className="h-4 w-4" /> },
+  ];
 
   return (
     <div className="space-y-6">
       {/* Back button */}
-      <Link
-        href="/leads"
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900"
-      >
+      <Link href="/leads" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900">
         <ArrowLeft className="h-4 w-4" />
         Back to Leads
       </Link>
@@ -266,9 +517,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {LEAD_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replace("_", " ")}
-              </option>
+              <option key={s} value={s}>{s.replace("_", " ")}</option>
             ))}
           </select>
           <Badge variant={statusBadgeVariant[lead.status] ?? "secondary"}>
@@ -281,34 +530,29 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         {/* Main content */}
         <div className="lg:col-span-2 space-y-6">
           {/* Tabs */}
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-            {[
-              { key: "timeline", label: "Timeline" },
-              { key: "calllog", label: "Add Call Log" },
-              { key: "briefing", label: "Briefings" },
-            ].map((tab) => (
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto">
+            {tabs.map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => setActiveTab(tab.key as typeof activeTab)}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer ${
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
                   activeTab === tab.key
                     ? "bg-white text-gray-900 shadow-sm"
                     : "text-gray-600 hover:text-gray-900"
                 }`}
               >
+                {tab.icon}
                 {tab.label}
               </button>
             ))}
           </div>
 
-          {/* Timeline Tab */}
+          {/* =================== TAB 1: Timeline =================== */}
           {activeTab === "timeline" && (
             <div className="space-y-3">
               {timeline.length === 0 ? (
                 <Card>
-                  <CardContent className="py-12 text-center text-gray-400">
-                    No interactions yet
-                  </CardContent>
+                  <CardContent className="py-12 text-center text-gray-400">No interactions yet</CardContent>
                 </Card>
               ) : (
                 timeline.map((item, i) => (
@@ -316,65 +560,49 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     <CardContent className="py-4">
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5">
-                          {item.type === "email" && (
-                            <Mail className="h-4 w-4 text-blue-500" />
-                          )}
-                          {item.type === "meeting" && (
-                            <Calendar className="h-4 w-4 text-green-500" />
-                          )}
-                          {item.type === "calllog" && (
-                            <Phone className="h-4 w-4 text-purple-500" />
-                          )}
-                          {item.type === "note" && (
-                            <StickyNote className="h-4 w-4 text-yellow-500" />
-                          )}
+                          {item.type === "email" && <Mail className="h-4 w-4 text-blue-500" />}
+                          {item.type === "meeting" && <Calendar className="h-4 w-4 text-green-500" />}
+                          {item.type === "calllog" && <Phone className="h-4 w-4 text-purple-500" />}
+                          {item.type === "note" && <StickyNote className="h-4 w-4 text-yellow-500" />}
                         </div>
                         <div className="flex-1 min-w-0">
-                          {item.type === "email" && (
-                            <>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium">
-                                  {(item.data as LeadDetail["emails"][0]).isInbound ? "Received" : "Sent"}:
-                                </span>
-                                <span className="text-sm text-gray-900 truncate">
-                                  {(item.data as LeadDetail["emails"][0]).subject ?? "(no subject)"}
-                                </span>
-                              </div>
-                              <p className="text-xs text-gray-500 mt-1 truncate">
-                                {(item.data as LeadDetail["emails"][0]).snippet}
-                              </p>
-                            </>
-                          )}
-                          {item.type === "meeting" && (
-                            <>
-                              <span className="text-sm font-medium">
-                                Meeting: {(item.data as LeadDetail["meetings"][0]).title}
-                              </span>
-                              <p className="text-xs text-gray-500 mt-1">
-                                {formatDateTime((item.data as LeadDetail["meetings"][0]).startTime)}
-                              </p>
-                            </>
-                          )}
-                          {item.type === "calllog" && (
-                            <>
-                              <span className="text-sm font-medium">
-                                Call Log
-                                {(item.data as LeadDetail["callLogs"][0]).outcome && (
-                                  <Badge variant="secondary" className="ml-2">
-                                    {(item.data as LeadDetail["callLogs"][0]).outcome}
+                          {item.type === "email" && (() => {
+                            const e = item.data as LeadDetail["emails"][0];
+                            return (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant={e.isInbound ? "default" : "secondary"} className="text-xs">
+                                    {e.isInbound ? "Received" : "Sent"}
                                   </Badge>
-                                )}
-                              </span>
-                              <p className="text-sm text-gray-700 mt-1">
-                                {(item.data as LeadDetail["callLogs"][0]).aiSummary ??
-                                  (item.data as LeadDetail["callLogs"][0]).rawText.slice(0, 200)}
-                              </p>
-                            </>
-                          )}
+                                  <span className="text-sm text-gray-900 truncate font-medium">{e.subject ?? "(no subject)"}</span>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1 truncate">{e.snippet}</p>
+                              </>
+                            );
+                          })()}
+                          {item.type === "meeting" && (() => {
+                            const m = item.data as LeadDetail["meetings"][0];
+                            return (
+                              <>
+                                <span className="text-sm font-medium">Meeting: {m.title}</span>
+                                <p className="text-xs text-gray-500 mt-1">{formatDateTime(m.startTime)}</p>
+                              </>
+                            );
+                          })()}
+                          {item.type === "calllog" && (() => {
+                            const c = item.data as LeadDetail["callLogs"][0];
+                            return (
+                              <>
+                                <span className="text-sm font-medium">
+                                  Call Log
+                                  {c.outcome && <Badge variant="secondary" className="ml-2">{c.outcome}</Badge>}
+                                </span>
+                                <p className="text-sm text-gray-700 mt-1 line-clamp-2">{c.aiSummary ?? c.rawText.slice(0, 200)}</p>
+                              </>
+                            );
+                          })()}
                           {item.type === "note" && (
-                            <p className="text-sm text-gray-700">
-                              {(item.data as LeadDetail["notes"][0]).content}
-                            </p>
+                            <p className="text-sm text-gray-700">{(item.data as LeadDetail["notes"][0]).content}</p>
                           )}
                           <span className="text-xs text-gray-400 mt-1 block">
                             {formatRelativeTime(item.date.toISOString())}
@@ -388,158 +616,451 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             </div>
           )}
 
-          {/* Call Log Tab */}
-          {activeTab === "calllog" && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Phone className="h-5 w-5" />
-                  Add Call Log
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex gap-2">
-                  {["SUMMARY", "FULL_TRANSCRIPT", "MANUAL_NOTES"].map((type) => (
-                    <button
-                      key={type}
-                      onClick={() => setCallLogType(type)}
-                      className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
-                        callLogType === type
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-gray-100 text-gray-600 hover:text-gray-900"
-                      }`}
-                    >
-                      {type.replace("_", " ")}
-                    </button>
-                  ))}
-                </div>
-                <Textarea
-                  placeholder="Paste your call transcript, summary, or notes here..."
-                  value={callLogText}
-                  onChange={(e) => setCallLogText(e.target.value)}
-                  className="min-h-[200px]"
-                />
-                <Button onClick={analyzeCallLog} disabled={analyzing || !callLogText.trim()}>
-                  <Sparkles className="h-4 w-4" />
-                  {analyzing ? "Analyzing..." : "Analyze with AI"}
-                </Button>
-
-                {analysisResult && (
-                  <div className="space-y-4 border-t pt-4">
-                    <h3 className="font-semibold text-gray-900">Analysis Results</h3>
-                    {(() => {
-                      const analysis = analysisResult.analysis as Record<string, unknown>;
-                      return (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <Card>
-                            <CardContent className="py-3">
-                              <h4 className="text-sm font-medium text-gray-500 mb-2">Summary</h4>
-                              <p className="text-sm">{analysis.summary as string}</p>
-                            </CardContent>
-                          </Card>
-                          <Card>
-                            <CardContent className="py-3">
-                              <h4 className="text-sm font-medium text-gray-500 mb-2">Outcome</h4>
-                              <Badge>{analysis.outcome as string}</Badge>
-                              <span className="ml-2 text-sm">
-                                Engagement: {analysis.engagementLevel as string}
-                              </span>
-                            </CardContent>
-                          </Card>
-                          <Card>
-                            <CardContent className="py-3">
-                              <h4 className="text-sm font-medium text-gray-500 mb-2">Key Points</h4>
-                              <ul className="text-sm space-y-1">
-                                {(analysis.keyPoints as string[]).map((p, i) => (
-                                  <li key={i} className="flex gap-2">
-                                    <span className="text-blue-500">-</span> {p}
-                                  </li>
-                                ))}
-                              </ul>
-                            </CardContent>
-                          </Card>
-                          <Card>
-                            <CardContent className="py-3">
-                              <h4 className="text-sm font-medium text-gray-500 mb-2">Next Steps</h4>
-                              <ul className="text-sm space-y-1">
-                                {(analysis.nextSteps as Array<{ action: string; owner: string; deadline: string }>).map(
-                                  (step, i) => (
-                                    <li key={i} className="flex gap-2">
-                                      <span className="text-green-500">-</span>
-                                      {step.action} ({step.owner}, {step.deadline})
-                                    </li>
-                                  )
-                                )}
-                              </ul>
-                            </CardContent>
-                          </Card>
-                        </div>
-                      );
-                    })()}
-                    <div className="flex gap-2">
-                      <Button onClick={applyAnalysis}>
-                        Save &amp; Update Lead
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => setAnalysisResult(null)}
-                      >
-                        Discard
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Briefings Tab */}
-          {activeTab === "briefing" && (
-            <div className="space-y-4">
-              {lead.meetings.length === 0 ? (
+          {/* =================== TAB 2: Conversation (iMessage style) =================== */}
+          {activeTab === "conversation" && (
+            <div className="space-y-8">
+              {threads.length === 0 ? (
                 <Card>
                   <CardContent className="py-12 text-center text-gray-400">
-                    No meetings to generate briefings for
+                    No email conversations yet
                   </CardContent>
                 </Card>
               ) : (
-                lead.meetings.map((meeting) => (
-                  <Card key={meeting.id}>
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center justify-between">
-                        <span>{meeting.title}</span>
-                        <span className="text-sm text-gray-500 font-normal">
-                          {formatDateTime(meeting.startTime)}
-                        </span>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {meeting.briefings.length > 0 ? (
-                        <div className="prose prose-sm max-w-none">
-                          <ReactMarkdown>
-                            {meeting.briefings[0].content}
-                          </ReactMarkdown>
-                        </div>
-                      ) : (
-                        <BriefingGenerator meetingId={meeting.id} onGenerated={fetchLead} />
-                      )}
-                    </CardContent>
-                  </Card>
+                threads.map(([threadKey, emails]) => (
+                  <div key={threadKey}>
+                    {/* Thread subject header */}
+                    <div className="flex items-center gap-2 mb-4 px-2">
+                      <Mail className="h-4 w-4 text-gray-400" />
+                      <span className="text-sm font-semibold text-gray-700">
+                        {emails[0].subject ?? "(no subject)"}
+                      </span>
+                      <span className="text-xs text-gray-400 ml-auto">
+                        {emails.length} {emails.length === 1 ? "message" : "messages"}
+                      </span>
+                    </div>
+
+                    {/* Chat bubbles */}
+                    <div className="space-y-3">
+                      {emails.map((email) => {
+                        const isMe = !email.isInbound;
+                        const isExpanded = expandedMessages.has(email.id);
+                        const fullText = email.body || email.snippet || "(no content)";
+                        const preview = email.snippet || fullText.slice(0, 120);
+                        const hasMore = fullText.length > 140;
+
+                        return (
+                          <div
+                            key={email.id}
+                            className={`flex ${isMe ? "justify-end" : "justify-start"}`}
+                          >
+                            <div className={`max-w-[85%] ${isMe ? "items-end" : "items-start"} flex flex-col`}>
+                              {/* Sender + date */}
+                              <div className={`flex items-center gap-2 mb-1 px-1 ${isMe ? "flex-row-reverse" : ""}`}>
+                                <span className="text-xs font-medium text-gray-500">
+                                  {isMe ? "You" : (email.fromName || email.fromEmail)}
+                                </span>
+                                <span className="text-xs text-gray-400">
+                                  {formatDateTime(email.date)}
+                                </span>
+                              </div>
+
+                              {/* Bubble */}
+                              <div
+                                className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                                  isMe
+                                    ? "bg-blue-500 text-white rounded-br-md"
+                                    : "bg-gray-100 text-gray-900 rounded-bl-md"
+                                }`}
+                              >
+                                {isExpanded ? (
+                                  <div className="whitespace-pre-wrap">{fullText}</div>
+                                ) : (
+                                  <div className="whitespace-pre-wrap">{preview}{hasMore && !isExpanded ? "..." : ""}</div>
+                                )}
+                              </div>
+
+                              {/* Expand / collapse button */}
+                              {hasMore && (
+                                <button
+                                  onClick={() => toggleMessage(email.id)}
+                                  className={`text-xs mt-1 px-1 cursor-pointer ${
+                                    isMe
+                                      ? "text-blue-400 hover:text-blue-300 self-end"
+                                      : "text-blue-500 hover:text-blue-700 self-start"
+                                  }`}
+                                >
+                                  {isExpanded ? "Collapse" : "Read full message"}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 ))
               )}
             </div>
           )}
+
+          {/* =================== TAB 3: Call Logs =================== */}
+          {activeTab === "calllogs" && (
+            <div className="space-y-4">
+              {/* Add new call log button */}
+              <div className="flex justify-end">
+                <Button onClick={() => setShowCallLogModal(true)}>
+                  <Plus className="h-4 w-4" />
+                  Add Call Log
+                </Button>
+              </div>
+
+              {/* Existing call logs */}
+              {lead.callLogs.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center text-gray-400">
+                    <Phone className="h-8 w-8 mx-auto mb-3 opacity-50" />
+                    <p>No call logs yet</p>
+                    <p className="text-sm mt-1">Click &quot;Add Call Log&quot; to record a call</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                lead.callLogs.map((log) => {
+                  const isExpanded = expandedCallLog === log.id;
+                  return (
+                    <Card key={log.id}>
+                      <CardContent className="py-4">
+                        {/* Header row */}
+                        <button
+                          onClick={() => setExpandedCallLog(isExpanded ? null : log.id)}
+                          className="w-full flex items-center justify-between text-left cursor-pointer"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Phone className="h-4 w-4 text-purple-500" />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-gray-900">
+                                  Call Log
+                                </span>
+                                <Badge variant="secondary" className="text-xs">{log.type.replace(/_/g, " ")}</Badge>
+                                {log.outcome && (
+                                  <Badge
+                                    variant={
+                                      log.outcome === "POSITIVE" ? "success"
+                                        : log.outcome === "NEGATIVE" ? "destructive"
+                                        : "secondary"
+                                    }
+                                    className="text-xs"
+                                  >
+                                    {log.outcome}
+                                  </Badge>
+                                )}
+                                {log.aiEngagementLevel && (
+                                  <span className="text-xs text-gray-400">
+                                    Engagement: {log.aiEngagementLevel}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-xs text-gray-400">
+                                {formatDateTime(log.createdAt)}
+                              </span>
+                            </div>
+                          </div>
+                          {isExpanded ? (
+                            <ChevronDown className="h-4 w-4 text-gray-400" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-gray-400" />
+                          )}
+                        </button>
+
+                        {/* AI Summary (always visible) */}
+                        {log.aiSummary && (
+                          <div className="mt-3 pl-7">
+                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">AI Summary</h4>
+                            <p className="text-sm text-gray-700">{log.aiSummary}</p>
+                          </div>
+                        )}
+
+                        {/* Expanded content */}
+                        {isExpanded && (
+                          <div className="mt-4 pl-7 space-y-4">
+                            {/* Key Points */}
+                            {log.aiKeyPoints && (
+                              <div>
+                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Key Points</h4>
+                                <div className="text-sm text-gray-700 whitespace-pre-wrap">{log.aiKeyPoints}</div>
+                              </div>
+                            )}
+
+                            {/* Agreements */}
+                            {log.aiAgreements && (
+                              <div>
+                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Agreements</h4>
+                                <div className="text-sm text-gray-700 whitespace-pre-wrap">{log.aiAgreements}</div>
+                              </div>
+                            )}
+
+                            {/* Next Steps */}
+                            {log.aiNextSteps && (
+                              <div>
+                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Next Steps</h4>
+                                <div className="text-sm text-gray-700 whitespace-pre-wrap">{log.aiNextSteps}</div>
+                              </div>
+                            )}
+
+                            {/* Full transcript */}
+                            <div className="border-t pt-3">
+                              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Full Transcript / Raw Text</h4>
+                              <div className="text-sm text-gray-600 whitespace-pre-wrap bg-gray-50 rounded-lg p-3 max-h-80 overflow-y-auto">
+                                {log.rawText}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {/* =================== TAB 4: Flow of Funds =================== */}
+          {activeTab === "fof" && (
+            <div className="space-y-4">
+              {showFofEdit ? (
+                <FofEditForm
+                  currentFof={selectedFof}
+                  leadId={id}
+                  onSaved={() => { setShowFofEdit(false); fetchLead(); toast("FOF updated"); }}
+                  onCancel={() => setShowFofEdit(false)}
+                />
+              ) : selectedFof ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowFofEdit(true)}
+                      >
+                        <Pencil className="h-3 w-3" />
+                        Edit Manually
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={generateFof}
+                        disabled={generatingFof}
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        {generatingFof ? "Regenerating..." : "Regenerate with AI"}
+                      </Button>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowFofHistory(!showFofHistory)}
+                    >
+                      <History className="h-3 w-3" />
+                      {fofVersions.length} version{fofVersions.length !== 1 ? "s" : ""}
+                    </Button>
+                  </div>
+
+                  <FofDisplay fof={selectedFof} />
+
+                  {showFofHistory && (
+                    <FofHistory
+                      versions={fofVersions}
+                      currentVersion={selectedFof.version}
+                      onSelectVersion={(v) => setSelectedFof(v)}
+                    />
+                  )}
+                </>
+              ) : generatingFof ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Sparkles className="h-8 w-8 mx-auto mb-3 text-blue-500 animate-pulse" />
+                    <p className="text-gray-600 font-medium">Generating Flow of Funds...</p>
+                    <p className="text-xs text-gray-400 mt-1">AI is analyzing all emails and call logs. This may take 15-30 seconds.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <FofEmpty onGenerate={generateFof} generating={generatingFof} />
+              )}
+            </div>
+          )}
+
+          {/* =================== TAB 5: AI Recommendations (3 sub-sections) =================== */}
+          {activeTab === "recommendations" && (() => {
+            const recSections: { key: RecSection; label: string; icon: React.ReactNode; description: string }[] = [
+              { key: "company_profile", label: "Company Profile", icon: <Building2 className="h-4 w-4" />, description: "AI analysis of the company based on all communications" },
+              { key: "sales_script", label: "Sales Script", icon: <ScrollText className="h-4 w-4" />, description: "Script for gathering FOF information with personalized intro" },
+              { key: "next_steps", label: "Next Steps", icon: <ArrowRightCircle className="h-4 w-4" />, description: "Strategic recommendations and action plan" },
+            ];
+
+            const current = recSections.find((s) => s.key === activeRecSection)!;
+            const isLoading = recLoading[activeRecSection];
+            const content = recData[activeRecSection];
+
+            return (
+              <div className="space-y-4">
+                {/* Sub-tabs */}
+                <div className="flex gap-1 bg-gray-50 rounded-lg p-1">
+                  {recSections.map((sec) => (
+                    <button
+                      key={sec.key}
+                      onClick={() => setActiveRecSection(sec.key)}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer flex-1 justify-center ${
+                        activeRecSection === sec.key
+                          ? "bg-white text-gray-900 shadow-sm"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      {sec.icon}
+                      {sec.label}
+                      {recData[sec.key] && (
+                        <span className="w-2 h-2 rounded-full bg-green-400 ml-1" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Section header + language toggle + generate button */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">{current.label}</h3>
+                    <p className="text-sm text-gray-500">{current.description}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* Language toggle */}
+                    <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                      <button
+                        onClick={() => setAiLang("en")}
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                          aiLang === "en"
+                            ? "bg-white text-gray-900 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        EN
+                      </button>
+                      <button
+                        onClick={() => setAiLang("ru")}
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                          aiLang === "ru"
+                            ? "bg-white text-gray-900 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        RU
+                      </button>
+                    </div>
+                    <Button
+                      onClick={() => generateRecSection(activeRecSection)}
+                      disabled={isLoading}
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      {isLoading ? "Generating..." : content ? "Regenerate" : "Generate"}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Loading state */}
+                {isLoading && (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <Sparkles className="h-8 w-8 mx-auto mb-3 text-blue-500 animate-pulse" />
+                      <p className="text-gray-600 font-medium">Generating {current.label}...</p>
+                      <p className="text-xs text-gray-400 mt-1">AI is analyzing all available data. This may take 15-30 seconds.</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Empty state */}
+                {!isLoading && !content && (
+                  <Card>
+                    <CardContent className="py-12 text-center text-gray-400">
+                      <div className="flex justify-center mb-3 opacity-50">{current.icon}</div>
+                      <p>No {current.label.toLowerCase()} generated yet</p>
+                      <p className="text-sm mt-1">
+                        Click &quot;Generate&quot; to create an AI-powered {current.label.toLowerCase()}
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Content */}
+                {!isLoading && content && (
+                  <Card>
+                    <CardContent className="py-4">
+                      <div className="flex justify-end mb-3">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            navigator.clipboard.writeText(content);
+                            toast("Copied to clipboard");
+                          }}
+                        >
+                          <Copy className="h-3 w-3" />
+                          Copy
+                        </Button>
+                      </div>
+                      <div className="prose prose-sm max-w-none">
+                        <ReactMarkdown>{content}</ReactMarkdown>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Sidebar */}
         <div className="space-y-6">
+          {/* FOF Quick View */}
+          {selectedFof && activeTab !== "fof" && (
+            <Card className="border-blue-200 bg-blue-50/30">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-blue-600" />
+                  FOF Quick View
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Direction</span>
+                  <span className="font-medium">{selectedFof.paymentDirection || "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Business</span>
+                  <span className="font-medium">{selectedFof.businessModel || "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Risk</span>
+                  <span className="font-medium">{selectedFof.riskLevel || "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Confidence</span>
+                  <span className="font-medium">{selectedFof.confidenceScore ?? 0}%</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full mt-2"
+                  onClick={() => setActiveTab("fof")}
+                >
+                  View Full FOF
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Sales Stage */}
           <Card>
             <CardContent className="py-4">
-              <StageProgress
-                currentStage={lead.stage}
-                onStageChange={updateStage}
-              />
+              <StageProgress currentStage={lead.stage} onStageChange={updateStage} />
             </CardContent>
           </Card>
 
@@ -567,18 +1088,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     onChange={(e) => toggleTask(task.id, e.target.checked)}
                     className="rounded"
                   />
-                  <span
-                    className={`text-sm flex-1 ${
-                      task.completed ? "line-through text-gray-400" : "text-gray-700"
-                    }`}
-                  >
+                  <span className={`text-sm flex-1 ${task.completed ? "line-through text-gray-400" : "text-gray-700"}`}>
                     {task.title}
                   </span>
-                  {task.dueDate && (
-                    <span className="text-xs text-gray-400">
-                      {formatDate(task.dueDate)}
-                    </span>
-                  )}
+                  {task.dueDate && <span className="text-xs text-gray-400">{formatDate(task.dueDate)}</span>}
                 </div>
               ))}
               <div className="flex gap-2 pt-2">
@@ -615,7 +1128,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             </CardContent>
           </Card>
 
-          {/* Info */}
+          {/* Lead Info */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Lead Info</CardTitle>
@@ -649,17 +1162,24 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           </Card>
         </div>
       </div>
+
+      {/* Call Log Modal */}
+      <Dialog open={showCallLogModal} onOpenChange={setShowCallLogModal}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Phone className="h-5 w-5" />
+              Add Call Log
+            </DialogTitle>
+          </DialogHeader>
+          {callLogFormContent}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function BriefingGenerator({
-  meetingId,
-  onGenerated,
-}: {
-  meetingId: string;
-  onGenerated: () => void;
-}) {
+function BriefingGenerator({ meetingId, onGenerated }: { meetingId: string; onGenerated: () => void }) {
   const [generating, setGenerating] = useState(false);
 
   async function generate() {

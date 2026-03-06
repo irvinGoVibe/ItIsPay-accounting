@@ -43,7 +43,9 @@ export async function syncGmail(userId: string) {
       // Upsert email
       await prisma.email.upsert({
         where: { gmailId: detail.gmailId },
-        update: {},
+        update: {
+          body: detail.body,
+        },
         create: {
           gmailId: detail.gmailId,
           threadId: detail.threadId,
@@ -52,6 +54,7 @@ export async function syncGmail(userId: string) {
           toEmail: detail.toEmail,
           subject: detail.subject,
           snippet: detail.snippet,
+          body: detail.body,
           date: detail.date,
           isInbound: detail.isInbound,
           userId,
@@ -150,8 +153,84 @@ interface ParsedEmail {
   toEmail: string;
   subject: string | null;
   snippet: string | null;
+  body: string | null;
   date: Date;
   isInbound: boolean;
+}
+
+/**
+ * Extract plain-text body from a Gmail message payload.
+ * Walks MIME parts recursively, preferring text/plain over text/html.
+ */
+function extractBody(payload: {
+  mimeType?: string | null;
+  body?: { data?: string | null; size?: number | null } | null;
+  parts?: Array<{
+    mimeType?: string | null;
+    body?: { data?: string | null; size?: number | null } | null;
+    parts?: unknown[];
+  }> | null;
+}): string | null {
+  // Direct body on the payload (simple messages)
+  if (payload.mimeType === "text/plain" && payload.body?.data) {
+    return decodeBase64Url(payload.body.data);
+  }
+
+  // Multipart — walk parts
+  if (payload.parts) {
+    // First pass: look for text/plain
+    for (const part of payload.parts) {
+      if (part.mimeType === "text/plain" && part.body?.data) {
+        return decodeBase64Url(part.body.data);
+      }
+    }
+    // Second pass: recurse into nested multipart
+    for (const part of payload.parts) {
+      if (part.mimeType?.startsWith("multipart/") && part.parts) {
+        const nested = extractBody(part as typeof payload);
+        if (nested) return nested;
+      }
+    }
+    // Fallback: try text/html and strip tags
+    for (const part of payload.parts) {
+      if (part.mimeType === "text/html" && part.body?.data) {
+        const html = decodeBase64Url(part.body.data);
+        return stripHtmlTags(html);
+      }
+    }
+  }
+
+  // Single-part HTML message
+  if (payload.mimeType === "text/html" && payload.body?.data) {
+    const html = decodeBase64Url(payload.body.data);
+    return stripHtmlTags(html);
+  }
+
+  return null;
+}
+
+function decodeBase64Url(data: string): string {
+  // Gmail uses URL-safe base64
+  const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(base64, "base64").toString("utf-8");
+}
+
+function stripHtmlTags(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 async function fetchMessageDetail(
@@ -162,8 +241,7 @@ async function fetchMessageDetail(
     const response = await gmail.users.messages.get({
       userId: "me",
       id: messageId,
-      format: "metadata",
-      metadataHeaders: ["From", "To", "Subject", "Date"],
+      format: "full",
     });
 
     const headers = response.data.payload?.headers ?? [];
@@ -181,6 +259,11 @@ async function fetchMessageDetail(
     const userEmail = profile.data.emailAddress?.toLowerCase() ?? "";
     const isInbound = fromEmail.toLowerCase() !== userEmail;
 
+    // Extract full body text
+    const body = response.data.payload
+      ? extractBody(response.data.payload as Parameters<typeof extractBody>[0])
+      : null;
+
     return {
       gmailId: response.data.id!,
       threadId: response.data.threadId ?? "",
@@ -189,6 +272,7 @@ async function fetchMessageDetail(
       toEmail,
       subject: getHeader("Subject"),
       snippet: response.data.snippet ?? null,
+      body,
       date: new Date(parseInt(response.data.internalDate ?? "0")),
       isInbound,
     };

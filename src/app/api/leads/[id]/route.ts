@@ -24,6 +24,7 @@ export async function GET(
       callLogs: { orderBy: { createdAt: "desc" } },
       tasks: { orderBy: { dueDate: "asc" } },
       notes: { orderBy: { createdAt: "desc" } },
+      flowOfFunds: { orderBy: { version: "desc" } },
     },
   });
 

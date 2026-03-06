@@ -2,11 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Calendar, Sparkles, Video, MapPin } from "lucide-react";
+import {
+  Calendar,
+  Sparkles,
+  Video,
+  MapPin,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatDateTime, formatDate } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 
 interface Meeting {
   id: string;
@@ -23,11 +31,24 @@ interface Meeting {
 export default function MeetingsPage() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
 
   useEffect(() => {
     fetchMeetings();
   }, []);
+
+  // Auto-dismiss sync result after 5 seconds
+  useEffect(() => {
+    if (syncResult) {
+      const timer = setTimeout(() => setSyncResult(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [syncResult]);
 
   async function fetchMeetings() {
     setLoading(true);
@@ -37,6 +58,35 @@ export default function MeetingsPage() {
       setMeetings(data);
     }
     setLoading(false);
+  }
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/sync/calendar", { method: "POST" });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setSyncResult({
+          type: "success",
+          message: `Synced: ${data.imported} imported, ${data.deleted || 0} deleted, ${data.totalEvents} total events`,
+        });
+        fetchMeetings();
+      } else {
+        setSyncResult({
+          type: "error",
+          message: data.error || "Sync failed. Check your Google Calendar connection in Settings.",
+        });
+      }
+    } catch {
+      setSyncResult({
+        type: "error",
+        message: "Network error. Please try again.",
+      });
+    } finally {
+      setSyncing(false);
+    }
   }
 
   const now = new Date();
@@ -56,21 +106,43 @@ export default function MeetingsPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={async () => {
-            await fetch("/api/sync/calendar", { method: "POST" });
-            fetchMeetings();
-          }}
+          onClick={handleSync}
+          disabled={syncing}
         >
-          <Calendar className="h-4 w-4" />
-          Sync Calendar
+          {syncing ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Calendar className="h-4 w-4" />
+          )}
+          {syncing ? "Syncing..." : "Sync Calendar"}
         </Button>
       </div>
+
+      {/* Sync result banner */}
+      {syncResult && (
+        <div
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm ${
+            syncResult.type === "success"
+              ? "bg-green-50 text-green-700 border border-green-200"
+              : "bg-red-50 text-red-700 border border-red-200"
+          }`}
+        >
+          {syncResult.type === "success" ? (
+            <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+          ) : (
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+          )}
+          {syncResult.message}
+        </div>
+      )}
 
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
         <button
           onClick={() => setTab("upcoming")}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
-            tab === "upcoming" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600"
+            tab === "upcoming"
+              ? "bg-white text-gray-900 shadow-sm"
+              : "text-gray-600"
           }`}
         >
           Upcoming ({upcoming.length})
@@ -78,7 +150,9 @@ export default function MeetingsPage() {
         <button
           onClick={() => setTab("past")}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
-            tab === "past" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600"
+            tab === "past"
+              ? "bg-white text-gray-900 shadow-sm"
+              : "text-gray-600"
           }`}
         >
           Past ({past.length})
@@ -101,7 +175,9 @@ export default function MeetingsPage() {
           </Card>
         ) : (
           displayed.map((meeting) => {
-            const participants = JSON.parse(meeting.participants || "[]") as Array<{
+            const participants = JSON.parse(
+              meeting.participants || "[]"
+            ) as Array<{
               name: string;
               email: string;
             }>;
@@ -130,7 +206,8 @@ export default function MeetingsPage() {
                             className="text-blue-600 hover:underline"
                           >
                             {meeting.lead.name}
-                            {meeting.lead.company && ` (${meeting.lead.company})`}
+                            {meeting.lead.company &&
+                              ` (${meeting.lead.company})`}
                           </Link>
                         )}
                         {meeting.location && (
@@ -140,13 +217,17 @@ export default function MeetingsPage() {
                             ) : (
                               <MapPin className="h-3 w-3" />
                             )}
-                            {meeting.location.startsWith("http") ? "Video Call" : meeting.location}
+                            {meeting.location.startsWith("http")
+                              ? "Video Call"
+                              : meeting.location}
                           </span>
                         )}
                       </div>
                       {participants.length > 0 && (
                         <div className="text-xs text-gray-400 mt-1">
-                          {participants.map((p) => p.name || p.email).join(", ")}
+                          {participants
+                            .map((p) => p.name || p.email)
+                            .join(", ")}
                         </div>
                       )}
                     </div>
@@ -200,7 +281,12 @@ function GenerateBriefingBtn({
   }
 
   return (
-    <Button variant="outline" size="sm" onClick={generate} disabled={generating}>
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={generate}
+      disabled={generating}
+    >
       <Sparkles className="h-3 w-3" />
       {generating ? "..." : "Briefing"}
     </Button>
