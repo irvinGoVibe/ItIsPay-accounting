@@ -13,11 +13,11 @@ export async function syncCalendar(userId: string) {
   });
   const userEmail = userAccount?.user?.email?.toLowerCase() ?? "";
 
-  // Time range: past 30 days to future 30 days
+  // Time range: past 3 months to future 3 months
   const timeMin = new Date();
-  timeMin.setDate(timeMin.getDate() - 30);
+  timeMin.setMonth(timeMin.getMonth() - 3);
   const timeMax = new Date();
-  timeMax.setDate(timeMax.getDate() + 30);
+  timeMax.setMonth(timeMax.getMonth() + 3);
 
   // Always do full sync to catch all events
   let events: Array<ReturnType<typeof parseEvent>> = [];

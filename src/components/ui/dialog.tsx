@@ -61,29 +61,29 @@ function DialogHeader({
   );
 }
 
-function DialogTitle({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLHeadingElement>) {
-  return (
-    <h2
-      className={cn("text-lg font-semibold leading-none tracking-tight", className)}
-      {...props}
-    />
-  );
-}
+const DialogTitle = React.forwardRef<
+  React.ComponentRef<typeof DialogPrimitive.Title>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
+>(({ className, ...props }, ref) => (
+  <DialogPrimitive.Title
+    ref={ref}
+    className={cn("text-lg font-semibold leading-none tracking-tight", className)}
+    {...props}
+  />
+));
+DialogTitle.displayName = DialogPrimitive.Title.displayName;
 
-function DialogDescription({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLParagraphElement>) {
-  return (
-    <p
-      className={cn("text-sm text-gray-500", className)}
-      {...props}
-    />
-  );
-}
+const DialogDescription = React.forwardRef<
+  React.ComponentRef<typeof DialogPrimitive.Description>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
+>(({ className, ...props }, ref) => (
+  <DialogPrimitive.Description
+    ref={ref}
+    className={cn("text-sm text-gray-500", className)}
+    {...props}
+  />
+));
+DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
 export {
   Dialog,

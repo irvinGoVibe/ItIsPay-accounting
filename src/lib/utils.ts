@@ -96,8 +96,18 @@ export const LEAD_STAGES = [
   "CLOSED",
 ] as const;
 
+export const LEAD_CLASSIFICATIONS = ["CLIENT", "RAIL", "ADVISER", "CONSULTING"] as const;
+
+export const CLASSIFICATION_LABELS: Record<string, string> = {
+  CLIENT: "Client",
+  RAIL: "Rail",
+  ADVISER: "Adviser",
+  CONSULTING: "Consulting",
+};
+
 export const TASK_PRIORITIES = ["LOW", "MEDIUM", "HIGH"] as const;
 
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
 export type LeadStage = (typeof LEAD_STAGES)[number];
+export type LeadClassification = (typeof LEAD_CLASSIFICATIONS)[number];
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];

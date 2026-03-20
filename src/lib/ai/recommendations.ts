@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { generateAIResponse } from "./client";
+import { generateAIResponse, generateStructuredAIResponse } from "./client";
 import { formatDate } from "@/lib/utils";
 
 // Language instruction helper
@@ -309,4 +309,69 @@ How and when to reach out, what messaging to use, preferred channels.
 Suggestions for upselling, cross-selling, or structuring the deal better for both sides.`;
 
   return generateAIResponse(systemPrompt, userPrompt);
+}
+
+// ─────────────── 4. STRUCTURED RECOMMENDATIONS (for Activate Lead flow) ───────────────
+
+export interface ActionItem {
+  title: string;
+  priority: "HIGH" | "MEDIUM" | "LOW";
+  dueInDays: number;
+  owner: "us" | "client";
+}
+
+export interface StructuredRecommendations {
+  markdown: string;
+  actions: ActionItem[];
+}
+
+export async function generateStructuredRecommendations(
+  leadId: string,
+  userId: string,
+  lang: string = "ru"
+): Promise<StructuredRecommendations> {
+  const ctx = await fetchLeadContext(leadId, userId);
+
+  const systemPrompt = `You are a senior sales strategist for ItIsPay, a payment orchestration company.
+Your job is to analyze all available information about a client and provide actionable, strategic recommendations.
+Focus on moving the deal forward, addressing risks, and maximizing the chance of closing.
+
+You must return a JSON object with two fields:
+1. "markdown" — a detailed recommendation report in markdown format with sections: Deal Assessment, Immediate Actions (24-48h), Short-Term Strategy (this week), Risk Mitigation, Key Questions to Resolve, Communication Strategy.
+2. "actions" — an array of 3-7 concrete action items, each with: title (string), priority ("HIGH"/"MEDIUM"/"LOW"), dueInDays (number, days from now), owner ("us" or "client").
+
+Be specific — reference actual emails, calls, agreements, and FOF data.${langInstruction(lang)}`;
+
+  const userPrompt = `Analyze this client and provide strategic recommendations:
+
+${buildClientInfoBlock(ctx.lead)}
+
+## Flow of Funds
+${ctx.fofContext}
+
+## Recent Emails (${ctx.lead.emails.length} total):
+${ctx.emailContext || "No emails"}
+
+## Call Logs (${ctx.lead.callLogs.length}):
+${ctx.callLogContext || "No call logs"}
+
+## Notes:
+${ctx.notesContext || "No notes"}
+
+## Meetings:
+${ctx.meetingsContext || "No meetings"}
+
+## Current Tasks:
+${ctx.tasksContext || "No tasks"}
+
+Respond with JSON:
+{
+  "markdown": "## Deal Assessment\\n...",
+  "actions": [
+    { "title": "Action description", "priority": "HIGH", "dueInDays": 1, "owner": "us" },
+    ...
+  ]
+}`;
+
+  return generateStructuredAIResponse<StructuredRecommendations>(systemPrompt, userPrompt);
 }

@@ -24,6 +24,7 @@ import {
   Building2,
   ScrollText,
   ArrowRightCircle,
+  Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatDate, formatDateTime, formatRelativeTime, LEAD_STATUSES, type LeadStage } from "@/lib/utils";
+import { formatDate, formatDateTime, formatRelativeTime, LEAD_STATUSES, LEAD_CLASSIFICATIONS, CLASSIFICATION_LABELS, type LeadStage } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import { StageProgress } from "@/components/leads/stage-progress";
 import { QualificationChecklist } from "@/components/leads/qualification-checklist";
@@ -52,6 +53,8 @@ interface LeadDetail {
   company: string | null;
   status: string;
   stage: string;
+  classification: string | null;
+  isActiveDeal: boolean;
   phone: string | null;
   role: string | null;
   lastContact: string | null;
@@ -117,6 +120,13 @@ const statusBadgeVariant: Record<string, "default" | "secondary" | "success" | "
   CLOSED_LOST: "destructive",
 };
 
+const classificationColors: Record<string, string> = {
+  CLIENT: "bg-blue-100 text-blue-700",
+  RAIL: "bg-purple-100 text-purple-700",
+  ADVISER: "bg-amber-100 text-amber-700",
+  CONSULTING: "bg-green-100 text-green-700",
+};
+
 export default function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [lead, setLead] = useState<LeadDetail | null>(null);
@@ -153,6 +163,117 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [selectedFof, setSelectedFof] = useState<FlowOfFundsRecord | null>(null);
   const [showFofEdit, setShowFofEdit] = useState(false);
   const [showFofHistory, setShowFofHistory] = useState(false);
+
+  // Telegram state
+  const [showTelegramPreview, setShowTelegramPreview] = useState(false);
+  const [telegramText, setTelegramText] = useState("");
+  const [sendingTelegram, setSendingTelegram] = useState(false);
+  const [telegramMode, setTelegramMode] = useState<"short" | "detailed">("short");
+
+  function buildTelegramShort() {
+    if (!lead) return "";
+    const lines = [
+      `📋 <b>${lead.name}</b>`,
+      lead.company ? `🏢 ${lead.company}` : null,
+      `📊 ${lead.status.replace("_", " ")} → ${lead.stage}`,
+      lead.lastContact ? `📅 Последний контакт: ${new Date(lead.lastContact).toLocaleDateString("ru-RU")}` : null,
+      lead.tasks?.filter((t) => !t.completed)?.[0]?.title
+        ? `⏭ Следующий шаг: ${lead.tasks.filter((t) => !t.completed)[0].title}`
+        : null,
+    ].filter(Boolean);
+    return lines.join("\n");
+  }
+
+  function buildTelegramDetailed() {
+    if (!lead) return "";
+    const sections: string[] = [];
+
+    // Header
+    sections.push(`📋 <b>${lead.name}</b>`);
+    if (lead.company) sections.push(`🏢 ${lead.company}`);
+    sections.push(`📧 ${lead.email}`);
+    sections.push(`📊 ${lead.status.replace("_", " ")} → ${lead.stage}`);
+    if (lead.lastContact) sections.push(`📅 Последний контакт: ${new Date(lead.lastContact).toLocaleDateString("ru-RU")}`);
+    sections.push("");
+
+    // FOF Quick Info
+    if (selectedFof) {
+      sections.push(`<b>💰 Flow of Funds</b>`);
+      if (selectedFof.paymentDirection) sections.push(`Direction: ${selectedFof.paymentDirection}`);
+      if (selectedFof.businessModel) sections.push(`Business: ${selectedFof.businessModel}`);
+      if (selectedFof.expectedVolume) sections.push(`Volume: ${selectedFof.expectedVolume}`);
+      if (selectedFof.currencies) sections.push(`Currencies: ${selectedFof.currencies}`);
+      if (selectedFof.riskLevel) sections.push(`Risk: ${selectedFof.riskLevel}`);
+      sections.push("");
+    }
+
+    // Recent Meetings
+    const meetings = lead.meetings?.slice(0, 5) ?? [];
+    if (meetings.length > 0) {
+      sections.push(`<b>📅 Встречи (последние ${meetings.length})</b>`);
+      meetings.forEach((m) => {
+        const isUpcoming = new Date(m.startTime) > new Date();
+        const status = m.status === "CANCELLED" ? "❌" : isUpcoming ? "🟢" : "✅";
+        sections.push(`${status} ${m.title} — ${new Date(m.startTime).toLocaleDateString("ru-RU")} ${new Date(m.startTime).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`);
+      });
+      sections.push("");
+    }
+
+    // Recent Call Logs
+    const calls = lead.callLogs?.slice(0, 5) ?? [];
+    if (calls.length > 0) {
+      sections.push(`<b>📞 Звонки (последние ${calls.length})</b>`);
+      calls.forEach((c) => {
+        const date = new Date(c.createdAt).toLocaleDateString("ru-RU");
+        const summary = c.aiSummary ? c.aiSummary.slice(0, 100) + (c.aiSummary.length > 100 ? "..." : "") : c.rawText.slice(0, 100) + "...";
+        sections.push(`• ${date}${c.outcome ? ` [${c.outcome}]` : ""}: ${summary}`);
+      });
+      sections.push("");
+    }
+
+    // Recent Emails
+    const emails = lead.emails?.slice(0, 5) ?? [];
+    if (emails.length > 0) {
+      sections.push(`<b>✉️ Письма (последние ${emails.length})</b>`);
+      emails.forEach((e) => {
+        const dir = e.isInbound ? "📥" : "📤";
+        const date = new Date(e.date).toLocaleDateString("ru-RU");
+        sections.push(`${dir} ${date}: ${e.subject ?? "(без темы)"}`);
+      });
+      sections.push("");
+    }
+
+    // Tasks
+    const pendingTasks = lead.tasks?.filter((t) => !t.completed) ?? [];
+    if (pendingTasks.length > 0) {
+      sections.push(`<b>✅ Задачи (${pendingTasks.length} активных)</b>`);
+      pendingTasks.slice(0, 5).forEach((t) => {
+        const due = t.dueDate ? ` (до ${new Date(t.dueDate).toLocaleDateString("ru-RU")})` : "";
+        sections.push(`☐ ${t.title}${due}`);
+      });
+    }
+
+    return sections.join("\n");
+  }
+
+  async function sendToTelegram() {
+    setSendingTelegram(true);
+    try {
+      const res = await fetch("/api/telegram/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: telegramText }),
+      });
+      if (res.ok) {
+        toast("Sent to Telegram");
+        setShowTelegramPreview(false);
+      } else {
+        toast("Failed to send");
+      }
+    } finally {
+      setSendingTelegram(false);
+    }
+  }
 
   // AI Recommendations state (3 sections)
   type RecSection = "company_profile" | "sales_script" | "next_steps";
@@ -196,6 +317,16 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       body: JSON.stringify({ status }),
     });
     toast("Status updated");
+    fetchLead();
+  }
+
+  async function updateClassification(classification: string | null) {
+    await fetch(`/api/leads/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ classification }),
+    });
+    toast("Classification updated");
     fetchLead();
   }
 
@@ -502,7 +633,29 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">{lead.name}</h1>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                await fetch(`/api/leads/${id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ isActiveDeal: !lead.isActiveDeal }),
+                });
+                setLead({ ...lead, isActiveDeal: !lead.isActiveDeal });
+                toast(lead.isActiveDeal ? "Убрано из активных сделок" : "Добавлено в активные сделки");
+              }}
+              className="cursor-pointer hover:scale-110 transition-transform"
+              title={lead.isActiveDeal ? "Убрать из активных сделок" : "Добавить в активные сделки"}
+            >
+              <Star className={`h-6 w-6 ${lead.isActiveDeal ? "fill-amber-400 text-amber-400" : "text-gray-300 hover:text-amber-300"}`} />
+            </button>
+            <h1 className="text-2xl font-semibold text-gray-900">{lead.name}</h1>
+            {lead.classification && (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${classificationColors[lead.classification] ?? "bg-gray-100 text-gray-700"}`}>
+                {CLASSIFICATION_LABELS[lead.classification] ?? lead.classification}
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
             {lead.company && <span>{lead.company}</span>}
             <span>{lead.email}</span>
@@ -511,6 +664,16 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <select
+            value={lead.classification ?? ""}
+            onChange={(e) => updateClassification(e.target.value || null)}
+            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">No Type</option>
+            {LEAD_CLASSIFICATIONS.map((c) => (
+              <option key={c} value={c}>{CLASSIFICATION_LABELS[c]}</option>
+            ))}
+          </select>
           <select
             value={lead.status}
             onChange={(e) => updateStatus(e.target.value)}
@@ -523,8 +686,61 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           <Badge variant={statusBadgeVariant[lead.status] ?? "secondary"}>
             Stage: {lead.stage}
           </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setTelegramMode("short");
+              setTelegramText(buildTelegramShort());
+              setShowTelegramPreview(true);
+            }}
+          >
+            <Send className="h-4 w-4" />
+            Telegram
+          </Button>
         </div>
       </div>
+
+      {/* Telegram Preview Modal */}
+      <Dialog open={showTelegramPreview} onOpenChange={setShowTelegramPreview}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Отправить в Telegram</DialogTitle>
+          </DialogHeader>
+
+          {/* Mode Switcher */}
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            <button
+              className={`flex-1 px-3 py-1.5 text-sm rounded-md transition-colors ${telegramMode === "short" ? "bg-white shadow font-medium" : "text-gray-500 hover:text-gray-700"}`}
+              onClick={() => { setTelegramMode("short"); setTelegramText(buildTelegramShort()); }}
+            >
+              📋 Кратко
+            </button>
+            <button
+              className={`flex-1 px-3 py-1.5 text-sm rounded-md transition-colors ${telegramMode === "detailed" ? "bg-white shadow font-medium" : "text-gray-500 hover:text-gray-700"}`}
+              onClick={() => { setTelegramMode("detailed"); setTelegramText(buildTelegramDetailed()); }}
+            >
+              📊 Подробно
+            </button>
+          </div>
+
+          <Textarea
+            value={telegramText}
+            onChange={(e) => setTelegramText(e.target.value)}
+            rows={telegramMode === "short" ? 6 : 16}
+            className="font-mono text-sm"
+          />
+          <p className="text-xs text-gray-500">HTML: &lt;b&gt;жирный&lt;/b&gt;, &lt;i&gt;курсив&lt;/i&gt; · Можно редактировать перед отправкой</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowTelegramPreview(false)}>
+              Отмена
+            </Button>
+            <Button onClick={sendToTelegram} disabled={sendingTelegram || !telegramText.trim()}>
+              {sendingTelegram ? "Отправка..." : "Отправить"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main content */}
@@ -556,7 +772,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 </Card>
               ) : (
                 timeline.map((item, i) => (
-                  <Card key={i}>
+                  <Card key={i} className={
+                    item.type === "meeting" && new Date((item.data as LeadDetail["meetings"][0]).startTime) > new Date()
+                      ? "border-l-4 border-l-green-400"
+                      : item.type === "meeting" && (item.data as LeadDetail["meetings"][0]).status === "CANCELLED"
+                        ? "border-l-4 border-l-red-300 opacity-60"
+                        : ""
+                  }>
                     <CardContent className="py-4">
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5">
@@ -582,10 +804,30 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                           })()}
                           {item.type === "meeting" && (() => {
                             const m = item.data as LeadDetail["meetings"][0];
+                            const isUpcoming = new Date(m.startTime) > new Date();
+                            const isCancelled = m.status === "CANCELLED";
+                            const participants: Array<{email: string; name?: string}> = (() => {
+                              try { return JSON.parse(m.participants ?? "[]"); } catch { return []; }
+                            })();
                             return (
                               <>
-                                <span className="text-sm font-medium">Meeting: {m.title}</span>
-                                <p className="text-xs text-gray-500 mt-1">{formatDateTime(m.startTime)}</p>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant={isCancelled ? "destructive" : isUpcoming ? "default" : "secondary"} className={`text-xs ${isUpcoming && !isCancelled ? "bg-green-100 text-green-700" : ""}`}>
+                                    {isCancelled ? "Cancelled" : isUpcoming ? "Upcoming" : "Completed"}
+                                  </Badge>
+                                  <span className={`text-sm font-medium ${isCancelled ? "line-through text-gray-400" : ""}`}>{m.title}</span>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {formatDateTime(m.startTime)} — {new Date(m.endTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+                                </p>
+                                {participants.length > 0 && (
+                                  <p className="text-xs text-gray-400 mt-0.5">
+                                    👥 {participants.map(p => p.name || p.email).join(", ")}
+                                  </p>
+                                )}
+                                {m.location && (
+                                  <p className="text-xs text-gray-400 mt-0.5">📍 {m.location}</p>
+                                )}
                               </>
                             );
                           })()}

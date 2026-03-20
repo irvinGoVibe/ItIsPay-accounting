@@ -86,7 +86,9 @@ model Lead {
   phone     String?
   role      String?
   website   String?
-  source    String   @default("GMAIL") // GMAIL, MANUAL, CALENDAR
+  source         String   @default("GMAIL") // GMAIL, MANUAL, CALENDAR
+  classification String?  // CLIENT, RAIL, ADVISER, CONSULTING
+  isActiveDeal  Boolean  @default(false)
 
   lastContact DateTime?
   userId      String

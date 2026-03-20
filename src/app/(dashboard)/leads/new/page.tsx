@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
+import { LEAD_CLASSIFICATIONS, CLASSIFICATION_LABELS } from "@/lib/utils";
 
 export default function NewLeadPage() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export default function NewLeadPage() {
     company: "",
     phone: "",
     role: "",
+    classification: "",
   });
 
   async function handleSubmit(e: React.FormEvent) {
@@ -27,10 +29,14 @@ export default function NewLeadPage() {
 
     setSaving(true);
     try {
+      const payload = {
+        ...form,
+        classification: form.classification || null,
+      };
       const res = await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
@@ -91,6 +97,19 @@ export default function NewLeadPage() {
                 onChange={(e) => setForm({ ...form, company: e.target.value })}
                 placeholder="Acme Inc."
               />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700">Type</label>
+              <select
+                value={form.classification}
+                onChange={(e) => setForm({ ...form, classification: e.target.value })}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select type...</option>
+                {LEAD_CLASSIFICATIONS.map((c) => (
+                  <option key={c} value={c}>{CLASSIFICATION_LABELS[c]}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700">Phone</label>

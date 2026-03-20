@@ -49,6 +49,11 @@ export function KeyboardShortcuts() {
       }
 
       // Quick actions
+      if (e.key === "a") {
+        window.dispatchEvent(new CustomEvent("open-activate-lead"));
+        return;
+      }
+
       if (e.key === "?" && !e.shiftKey) {
         // Could show keyboard shortcut help modal
       }

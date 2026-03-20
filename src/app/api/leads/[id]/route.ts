@@ -66,6 +66,8 @@ export async function PATCH(
       role: body.role ?? undefined,
       status: body.status ?? undefined,
       stage: body.stage ?? undefined,
+      classification: body.classification !== undefined ? body.classification : undefined,
+      isActiveDeal: body.isActiveDeal !== undefined ? body.isActiveDeal : undefined,
       lastContact: body.lastContact ? new Date(body.lastContact) : undefined,
     },
   });

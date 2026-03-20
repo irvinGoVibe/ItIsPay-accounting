@@ -20,6 +20,16 @@ export async function GET(request: NextRequest) {
     where.status = status;
   }
 
+  const classification = searchParams.get("classification");
+  if (classification && classification !== "ALL") {
+    where.classification = classification;
+  }
+
+  const activeDeal = searchParams.get("activeDeal");
+  if (activeDeal === "true") {
+    where.isActiveDeal = true;
+  }
+
   if (search) {
     where.OR = [
       { name: { contains: search } },
@@ -67,6 +77,7 @@ export async function POST(request: NextRequest) {
       role: body.role,
       status: body.status ?? "NEW",
       stage: body.stage ?? "QUALIFICATION",
+      classification: body.classification ?? null,
       source: "MANUAL",
       userId: session.user.id,
     },
