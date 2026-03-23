@@ -23,7 +23,7 @@ export async function sendDocument(
   formData.append("chat_id", chatId);
   formData.append(
     "document",
-    new Blob([fileBuffer], {
+    new Blob([new Uint8Array(fileBuffer)], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }),
     filename

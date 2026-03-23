@@ -107,7 +107,7 @@ export function ActivateLeadDialog({
   const [processingStep, setProcessingStep] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
-  const { addToast } = useToast();
+  const { toast: addToast } = useToast();
 
   // Reset state when dialog opens/closes
   useEffect(() => {
