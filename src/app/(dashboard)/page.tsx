@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { DashboardContent } from "@/components/dashboard/dashboard-content";
 
+export const dynamic = "force-dynamic";
+
 export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
@@ -15,7 +17,7 @@ export default async function DashboardPage() {
   const weekEnd = new Date(todayStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
 
-  const [todayTasks, overdueTasks, upcomingMeetings, newLeads, totalLeads] =
+  const [todayTasks, overdueTasks, upcomingMeetings, newLeads, totalLeads, activeDeals] =
     await Promise.all([
       prisma.task.findMany({
         where: {
@@ -53,6 +55,15 @@ export default async function DashboardPage() {
       prisma.lead.count({
         where: { userId },
       }),
+      prisma.lead.findMany({
+        where: { userId, isActiveDeal: true },
+        select: {
+          id: true, name: true, company: true, status: true, stage: true, lastContact: true,
+          emails: { orderBy: { date: "desc" }, take: 1, select: { date: true } },
+          tasks: { where: { completed: false }, take: 1, orderBy: { dueDate: "asc" }, select: { title: true, dueDate: true } },
+        },
+        orderBy: { updatedAt: "desc" },
+      }),
     ]);
 
   return (
@@ -60,6 +71,7 @@ export default async function DashboardPage() {
       todayTasks={JSON.parse(JSON.stringify(todayTasks))}
       overdueTasks={JSON.parse(JSON.stringify(overdueTasks))}
       upcomingMeetings={JSON.parse(JSON.stringify(upcomingMeetings))}
+      activeDeals={JSON.parse(JSON.stringify(activeDeals))}
       newLeadsCount={newLeads}
       totalLeadsCount={totalLeads}
     />
