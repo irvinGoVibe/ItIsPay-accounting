@@ -213,7 +213,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       sections.push(`<b>📅 Встречи (последние ${meetings.length})</b>`);
       meetings.forEach((m) => {
         const isUpcoming = new Date(m.startTime) > new Date();
-        const status = m.status === "CANCELLED" ? "❌" : isUpcoming ? "🟢" : "✅";
+        const status = isUpcoming ? "🟢" : "✅";
         sections.push(`${status} ${m.title} — ${new Date(m.startTime).toLocaleDateString("ru-RU")} ${new Date(m.startTime).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`);
       });
       sections.push("");
