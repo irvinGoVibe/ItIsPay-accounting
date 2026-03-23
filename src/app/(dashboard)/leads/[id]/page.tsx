@@ -775,9 +775,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   <Card key={i} className={
                     item.type === "meeting" && new Date((item.data as LeadDetail["meetings"][0]).startTime) > new Date()
                       ? "border-l-4 border-l-green-400"
-                      : item.type === "meeting" && (item.data as LeadDetail["meetings"][0]).status === "CANCELLED"
-                        ? "border-l-4 border-l-red-300 opacity-60"
-                        : ""
+                      : ""
                   }>
                     <CardContent className="py-4">
                       <div className="flex items-start gap-3">
@@ -805,17 +803,16 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                           {item.type === "meeting" && (() => {
                             const m = item.data as LeadDetail["meetings"][0];
                             const isUpcoming = new Date(m.startTime) > new Date();
-                            const isCancelled = m.status === "CANCELLED";
                             const participants: Array<{email: string; name?: string}> = (() => {
                               try { return JSON.parse(m.participants ?? "[]"); } catch { return []; }
                             })();
                             return (
                               <>
                                 <div className="flex items-center gap-2">
-                                  <Badge variant={isCancelled ? "destructive" : isUpcoming ? "default" : "secondary"} className={`text-xs ${isUpcoming && !isCancelled ? "bg-green-100 text-green-700" : ""}`}>
-                                    {isCancelled ? "Cancelled" : isUpcoming ? "Upcoming" : "Completed"}
+                                  <Badge variant={isUpcoming ? "default" : "secondary"} className={`text-xs ${isUpcoming ? "bg-green-100 text-green-700" : ""}`}>
+                                    {isUpcoming ? "Upcoming" : "Completed"}
                                   </Badge>
-                                  <span className={`text-sm font-medium ${isCancelled ? "line-through text-gray-400" : ""}`}>{m.title}</span>
+                                  <span className="text-sm font-medium">{m.title}</span>
                                 </div>
                                 <p className="text-xs text-gray-500 mt-1">
                                   {formatDateTime(m.startTime)} — {new Date(m.endTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
