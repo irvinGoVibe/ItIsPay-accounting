@@ -191,6 +191,7 @@ export default function PushSchedulerPage() {
             onSelect={setSelected}
             onSent={(id) => callAction(id, "sent")}
             onSkip={(id) => callAction(id, "skip")}
+            onLeadEdited={fetchAll}
           />
         </div>
         <div className="space-y-4">
