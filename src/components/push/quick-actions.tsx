@@ -71,8 +71,8 @@ export function StatusSelect({
       value={value}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => onChange(e.target.value)}
-      className={`rounded-md border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-        size === "md" ? "px-3 py-2 text-sm" : "px-2 py-1 text-xs"
+      className={`rounded-md border border-gray-200 bg-white text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+        size === "md" ? "px-3 py-2 text-sm w-full" : "px-2 py-1 text-xs w-[120px]"
       }`}
     >
       {STATUSES.map((s) => (
