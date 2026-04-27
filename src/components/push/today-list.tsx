@@ -81,15 +81,7 @@ export function TodayList({ rows, loading, onSelect, onSent, onSkip, onLeadEdite
 
   return (
     <>
-      {/* Column headers */}
-      <div className="hidden lg:flex items-start gap-3 px-4 py-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-        <div className="shrink-0 w-20">Pri</div>
-        <div className="flex-1 min-w-[280px]">Lead</div>
-        <div className="shrink-0 w-32">Next touch</div>
-        <div className="shrink-0 w-32">Last contact</div>
-        <div className="shrink-0 w-32">Due</div>
-        <div className="shrink-0 w-44 text-right">Actions</div>
-      </div>
+      {/* No external column header — each row carries its own labels for visual rhythm */}
 
       <div className="space-y-2">
         {rows.map((r) => (
@@ -134,11 +126,11 @@ function Row({
 
   return (
     <div
-      className={`flex items-start gap-3 rounded-lg bg-white p-4 shadow-sm ring-1 ring-gray-200 hover:ring-gray-300 transition-all ${dueColorClasses(bucket)}`}
+      className={`flex items-start gap-4 rounded-lg bg-white p-5 shadow-sm ring-1 ring-gray-200 hover:ring-gray-300 transition-all ${dueColorClasses(bucket)}`}
     >
       {/* Priority pill */}
       <div
-        className={`shrink-0 w-20 rounded-md border px-2 py-1 text-xs font-semibold text-center ${PRIORITY_BADGE[row.priority] || PRIORITY_BADGE.STANDARD}`}
+        className={`shrink-0 w-20 rounded-md border px-2 py-1.5 text-xs font-semibold text-center tracking-wide ${PRIORITY_BADGE[row.priority] || PRIORITY_BADGE.STANDARD}`}
         title="Priority"
       >
         {PRIORITY_LABEL[row.priority] || row.priority}
@@ -146,73 +138,78 @@ function Row({
 
       {/* Lead — name is the primary thing in the row */}
       <div className="flex-1 min-w-[280px] overflow-hidden">
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
           <StarButton active={edit.active} onChange={edit.setActive} />
           <button
             onClick={() => onSelect(row.lead.id)}
             className="text-left flex-1 min-w-0 group"
           >
-            <span className="block text-base font-semibold text-gray-900 group-hover:text-blue-700 truncate">
+            <span className="block text-lg font-bold text-gray-900 group-hover:text-blue-700 truncate leading-tight">
               {row.lead.name || row.lead.email}
             </span>
           </button>
           <Link
             href={`/leads/${row.lead.id}`}
-            className="shrink-0 text-gray-400 hover:text-blue-600 transition-colors"
+            className="shrink-0 text-gray-400 hover:text-blue-600 transition-colors p-1 -m-1"
             title="Open lead page"
             onClick={(e) => e.stopPropagation()}
           >
             <ExternalLink className="h-4 w-4" />
           </Link>
         </div>
-        <div className="text-sm text-gray-600 truncate mt-0.5">
+        <div className="text-sm font-medium text-gray-700 truncate mt-1">
           {row.lead.company || "—"}
-          {row.lead.role ? ` · ${row.lead.role}` : ""}
+          {row.lead.role ? <span className="font-normal text-gray-500"> · {row.lead.role}</span> : ""}
         </div>
-        <div className="flex items-center gap-2 mt-1.5">
+        <div className="flex items-center gap-2 mt-2">
           <a
             href={`mailto:${row.lead.email}`}
             onClick={(e) => e.stopPropagation()}
-            className="text-xs text-gray-500 hover:text-blue-600 truncate"
+            className="text-xs text-gray-500 hover:text-blue-600 hover:underline truncate"
           >
             {row.lead.email}
           </a>
-          <StatusSelect value={edit.status} onChange={edit.setStatus} />
+          <div className="ml-auto">
+            <StatusSelect value={edit.status} onChange={edit.setStatus} />
+          </div>
         </div>
       </div>
 
       {/* Next touch */}
-      <div className="hidden lg:flex flex-col shrink-0 w-32 pt-1">
-        <div className="text-sm font-medium text-gray-900">{touchLabel(row.currentTouch)}</div>
-        <div className="text-xs text-gray-500">touch {row.currentTouch}/6 done</div>
+      <div className="hidden lg:flex flex-col shrink-0 w-32 pt-0.5">
+        <div className="text-xs uppercase tracking-wide text-gray-400 mb-0.5">Touch</div>
+        <div className="text-sm font-semibold text-gray-900 leading-tight">{touchLabel(row.currentTouch)}</div>
+        <div className="text-xs text-gray-400 mt-0.5">{row.currentTouch} of 6 done</div>
       </div>
 
       {/* Last contact */}
-      <div className="hidden lg:flex flex-col shrink-0 w-32 pt-1">
-        <div className="text-sm font-medium text-gray-900">
+      <div className="hidden lg:flex flex-col shrink-0 w-28 pt-0.5">
+        <div className="text-xs uppercase tracking-wide text-gray-400 mb-0.5">Last</div>
+        <div className="text-sm font-semibold text-gray-900 leading-tight">
           {shortDate(row.lastTouchAt)}
         </div>
-        <div className="text-xs text-gray-500">
-          {row.lastTouchAt ? pastRelative(row.lastTouchAt) : "no outbound yet"}
+        <div className="text-xs text-gray-400 mt-0.5">
+          {row.lastTouchAt ? pastRelative(row.lastTouchAt) : "no outbound"}
         </div>
       </div>
 
       {/* Due */}
-      <div className="hidden lg:flex flex-col shrink-0 w-32 pt-1">
-        <div className="text-sm font-medium text-gray-900">
+      <div className="hidden lg:flex flex-col shrink-0 w-28 pt-0.5">
+        <div className="text-xs uppercase tracking-wide text-gray-400 mb-0.5">Due</div>
+        <div className="text-sm font-semibold text-gray-900 leading-tight">
           {shortDate(row.nextTouchDueAt)}
         </div>
-        <div className={`text-xs ${dueRelativeColor(row.nextTouchDueAt)}`}>
+        <div className={`text-xs mt-0.5 ${dueRelativeColor(row.nextTouchDueAt)}`}>
           {dueRelative(row.nextTouchDueAt)}
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex gap-1 shrink-0 w-44 justify-end pt-1">
+      <div className="flex gap-1.5 shrink-0 justify-end pt-0.5">
         <Button
           size="sm"
           onClick={(e) => { e.stopPropagation(); onSent(row.lead.id); }}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
         >
           <Check className="h-4 w-4 mr-1" />
           Sent
@@ -221,7 +218,7 @@ function Row({
           size="sm"
           variant="ghost"
           onClick={(e) => { e.stopPropagation(); onSkip(row.lead.id); }}
-          className="text-gray-600"
+          className="text-gray-500 hover:text-gray-700"
         >
           <X className="h-4 w-4 mr-1" />
           Skip
