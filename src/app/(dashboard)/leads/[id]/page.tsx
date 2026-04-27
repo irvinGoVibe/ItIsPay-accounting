@@ -44,6 +44,7 @@ import { QualificationChecklist } from "@/components/leads/qualification-checkli
 import { FofDisplay, FofEmpty, type FlowOfFundsRecord } from "@/components/leads/fof-display";
 import { FofHistory } from "@/components/leads/fof-history";
 import { FofEditForm } from "@/components/leads/fof-edit-form";
+import { LeadPushCard } from "@/components/leads/lead-push-card";
 import { useToast } from "@/components/ui/toast";
 
 interface LeadDetail {
@@ -1302,6 +1303,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               <StageProgress currentStage={lead.stage} onStageChange={updateStage} />
             </CardContent>
           </Card>
+
+          {/* Push Scheduler — current touch, next due, quick actions */}
+          <LeadPushCard leadId={lead.id} />
 
           {/* Qualification Checklist */}
           <Card>
