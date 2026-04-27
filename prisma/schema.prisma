@@ -17,17 +17,18 @@ model User {
   image         String?
   timezone      String    @default("UTC")
 
-  accounts Account[]
-  sessions Session[]
-  leads    Lead[]
-  emails   Email[]
-  meetings Meeting[]
-  callLogs CallLog[]
-  briefings Briefing[]
-  tasks    Task[]
-  notes    Note[]
+  accounts    Account[]
+  sessions    Session[]
+  leads       Lead[]
+  emails      Email[]
+  meetings    Meeting[]
+  callLogs    CallLog[]
+  briefings   Briefing[]
+  tasks       Task[]
+  notes       Note[]
   flowOfFunds FlowOfFunds[]
   summaries   LeadSummary[]
+  pushQueues  PushQueue[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -77,22 +78,22 @@ model VerificationToken {
 // ─── Business Models ───────────────────────────────────────
 
 model Lead {
-  id        String   @id @default(cuid())
-  name      String
-  email     String
-  company   String?
-  status    String   @default("NEW") // NEW, CONTACTED, QUALIFIED, PROPOSAL, NEGOTIATION, CLOSED_WON, CLOSED_LOST
-  stage     String   @default("QUALIFICATION") // QUALIFICATION, DISCOVERY, PROPOSAL, NEGOTIATION, CLOSED
-  phone     String?
-  role      String?
-  website   String?
-  source         String   @default("GMAIL") // GMAIL, MANUAL, CALENDAR
-  classification String?  // CLIENT, RAIL, ADVISER, CONSULTING
-  isActiveDeal  Boolean  @default(false)
+  id             String  @id @default(cuid())
+  name           String
+  email          String
+  company        String?
+  status         String  @default("NEW") // NEW, CONTACTED, QUALIFIED, PROPOSAL, NEGOTIATION, CLOSED_WON, CLOSED_LOST
+  stage          String  @default("QUALIFICATION") // QUALIFICATION, DISCOVERY, PROPOSAL, NEGOTIATION, CLOSED
+  phone          String?
+  role           String?
+  website        String?
+  source         String  @default("GMAIL") // GMAIL, MANUAL, CALENDAR
+  classification String? // CLIENT, RAIL, ADVISER, CONSULTING
+  isActiveDeal   Boolean @default(false)
 
   lastContact DateTime?
   userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   emails      Email[]
   meetings    Meeting[]
@@ -102,6 +103,7 @@ model Lead {
   notes       Note[]
   flowOfFunds FlowOfFunds[]
   summaries   LeadSummary[]
+  pushQueue   PushQueue?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -119,8 +121,8 @@ model Email {
   fromName  String?
   toEmail   String
   subject   String?
-  snippet   String?  // Short preview of body
-  body      String?  // Full body text
+  snippet   String? // Short preview of body
+  body      String? // Full body text
   date      DateTime
   isInbound Boolean  @default(true) // true = received, false = sent
 
@@ -143,14 +145,14 @@ model Meeting {
   description     String?
   startTime       DateTime
   endTime         DateTime
-  location        String?  // URL or physical location
-  participants    String   // JSON array of {email, name, status}
+  location        String? // URL or physical location
+  participants    String // JSON array of {email, name, status}
   status          String   @default("CONFIRMED") // CONFIRMED, CANCELLED, TENTATIVE
 
-  leadId   String?
-  lead     Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  userId   String
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  userId String
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   callLogs  CallLog[]
   briefings Briefing[]
@@ -164,17 +166,17 @@ model Meeting {
 }
 
 model CallLog {
-  id       String @id @default(cuid())
-  rawText  String // The transcript/summary/notes pasted by user
-  type     String @default("SUMMARY") // FULL_TRANSCRIPT, SUMMARY, MANUAL_NOTES
-  outcome  String? // SUCCESSFUL, RESCHEDULED, NOT_INTERESTED, NO_ANSWER
+  id      String  @id @default(cuid())
+  rawText String // The transcript/summary/notes pasted by user
+  type    String  @default("SUMMARY") // FULL_TRANSCRIPT, SUMMARY, MANUAL_NOTES
+  outcome String? // SUCCESSFUL, RESCHEDULED, NOT_INTERESTED, NO_ANSWER
 
   // AI analysis results (stored as JSON strings)
-  aiSummary        String?
-  aiKeyPoints      String? // JSON array
-  aiAgreements     String? // JSON array
-  aiOpenQuestions  String? // JSON array
-  aiNextSteps      String? // JSON array of {action, owner, deadline}
+  aiSummary           String?
+  aiKeyPoints         String? // JSON array
+  aiAgreements        String? // JSON array
+  aiOpenQuestions     String? // JSON array
+  aiNextSteps         String? // JSON array of {action, owner, deadline}
   aiRecommendedStatus String?
   aiEngagementLevel   String? // LOW, MEDIUM, HIGH
 
@@ -210,14 +212,14 @@ model Briefing {
 }
 
 model Task {
-  id        String   @id @default(cuid())
-  title     String
-  dueDate   DateTime?
-  priority  String   @default("MEDIUM") // LOW, MEDIUM, HIGH
-  completed Boolean  @default(false)
+  id          String    @id @default(cuid())
+  title       String
+  dueDate     DateTime?
+  priority    String    @default("MEDIUM") // LOW, MEDIUM, HIGH
+  completed   Boolean   @default(false)
   completedAt DateTime?
-  owner     String   @default("us") // "us" or "client"
-  source    String   @default("MANUAL") // MANUAL, AI_ANALYSIS
+  owner       String    @default("us") // "us" or "client"
+  source      String    @default("MANUAL") // MANUAL, AI_ANALYSIS
 
   leadId String?
   lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
@@ -251,31 +253,31 @@ model Note {
 // ─── Flow of Funds ────────────────────────────────────────
 
 model FlowOfFunds {
-  id        String   @id @default(cuid())
-  version   Int      @default(1)
-  trigger   String   @default("MANUAL") // MANUAL, EMAIL_SYNC, CALL_LOG
+  id      String @id @default(cuid())
+  version Int    @default(1)
+  trigger String @default("MANUAL") // MANUAL, EMAIL_SYNC, CALL_LOG
 
-  paymentDirection       String?  // INBOUND, OUTBOUND, BOTH
+  paymentDirection       String? // INBOUND, OUTBOUND, BOTH
   sourceOfFunds          String?
   destinationOfFunds     String?
-  paymentMethods         String?  // JSON array: ["cards","bank_transfers","crypto"]
-  currencies             String?  // JSON array: ["USD","EUR"]
-  expectedVolume         String?  // "$500K/month"
+  paymentMethods         String? // JSON array: ["cards","bank_transfers","crypto"]
+  currencies             String? // JSON array: ["USD","EUR"]
+  expectedVolume         String? // "$500K/month"
   feeStructure           String?
-  settlementTimeline     String?  // "T+1", "Real-time"
+  settlementTimeline     String? // "T+1", "Real-time"
   complianceRequirements String?
-  integrationType        String?  // API, HOSTED_PAGE, PLUGIN, WHITE_LABEL
-  riskLevel              String?  // LOW, MEDIUM, HIGH, CRITICAL
-  geographicScope        String?  // JSON array: ["US","EU","LATAM"]
-  businessModel          String?  // MARKETPLACE, SAAS, ECOMMERCE, GAMBLING, TRAVEL
+  integrationType        String? // API, HOSTED_PAGE, PLUGIN, WHITE_LABEL
+  riskLevel              String? // LOW, MEDIUM, HIGH, CRITICAL
+  geographicScope        String? // JSON array: ["US","EU","LATAM"]
+  businessModel          String? // MARKETPLACE, SAAS, ECOMMERCE, GAMBLING, TRAVEL
   keyStakeholders        String?
   specialRequirements    String?
-  confidenceScore        Int?     // 0-100
+  confidenceScore        Int? // 0-100
 
   leadId    String
-  lead      Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
   userId    String
-  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
   @@index([leadId])
@@ -289,23 +291,64 @@ model LeadSummary {
   type    String @default("AI_SUMMARY") // AI_SUMMARY, FULL_TRANSCRIPT
 
   leadId    String
-  lead      Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
   userId    String
-  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
   @@index([leadId])
   @@index([userId])
 }
 
+// ─── Push Scheduler ────────────────────────────────────────
+
+model PushQueue {
+  id     String @id @default(cuid())
+  leadId String @unique
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status   String @default("ACTIVE") // ACTIVE | COLD | REPLIED | QUALIFIED | DISQUALIFIED | PAUSED
+  priority String @default("STANDARD") // P1 | STANDARD | COLD
+
+  startedAt      DateTime  @default(now())
+  currentTouch   Int       @default(0) // 0 = not started; 1..6 = number of last completed touch
+  lastTouchAt    DateTime?
+  nextTouchDueAt DateTime?
+  notes          String?
+
+  events PushEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([nextTouchDueAt])
+  @@index([priority])
+}
+
+model PushEvent {
+  id          String    @id @default(cuid())
+  queueId     String
+  queue       PushQueue @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  touchNumber Int // 1..6
+  type        String // FIRST | FU1 | LINKEDIN | FU2 | TRIGGER | LAST
+  action      String // SENT | SKIPPED | AUTO_COLD | REPLIED | DISQUALIFIED | PAUSED | NOTE | RESET
+  notes       String?
+  createdAt   DateTime  @default(now())
+
+  @@index([queueId, createdAt])
+}
+
 // ─── Sync State ────────────────────────────────────────────
 
 model SyncState {
-  id        String @id @default(cuid())
-  userId    String
-  provider  String // "gmail", "calendar"
-  historyId String? // Gmail historyId for incremental sync
-  syncToken String? // Calendar sync token
+  id         String    @id @default(cuid())
+  userId     String
+  provider   String // "gmail", "calendar"
+  historyId  String? // Gmail historyId for incremental sync
+  syncToken  String? // Calendar sync token
   lastSyncAt DateTime?
 
   @@unique([userId, provider])
