@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TodayList, type QueueRow } from "@/components/push/today-list";
@@ -84,7 +85,17 @@ export default function PushSchedulerPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
 
+  const searchParams = useSearchParams();
   const sortedToday = useMemo(() => sortRows(today, sortKey), [today, sortKey]);
+
+  // Auto-open drawer when navigated with ?selected=<leadId> (e.g. from a
+  // lead's "Open in Push" link). Runs once on mount; clearing the URL is
+  // up to the user — they can close the drawer normally.
+  useEffect(() => {
+    const sel = searchParams.get("selected");
+    if (sel) setSelected(sel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
