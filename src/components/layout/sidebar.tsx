@@ -7,6 +7,7 @@ import {
   Users,
   Calendar,
   CheckSquare,
+  Send,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -16,6 +17,7 @@ import { signOut } from "next-auth/react";
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Leads", href: "/leads", icon: Users },
+  { name: "Push Scheduler", href: "/push", icon: Send },
   { name: "Meetings", href: "/meetings", icon: Calendar },
   { name: "Tasks", href: "/tasks", icon: CheckSquare },
   { name: "Settings", href: "/settings", icon: Settings },

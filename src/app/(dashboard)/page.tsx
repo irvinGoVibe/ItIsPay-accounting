@@ -71,7 +71,6 @@ export default async function DashboardPage() {
       todayTasks={JSON.parse(JSON.stringify(todayTasks))}
       overdueTasks={JSON.parse(JSON.stringify(overdueTasks))}
       upcomingMeetings={JSON.parse(JSON.stringify(upcomingMeetings))}
-      activeDeals={JSON.parse(JSON.stringify(activeDeals))}
       newLeadsCount={newLeads}
       totalLeadsCount={totalLeads}
     />
