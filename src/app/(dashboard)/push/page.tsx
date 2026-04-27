@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TodayList, type QueueRow } from "@/components/push/today-list";
@@ -11,6 +11,53 @@ import { WeekPreview } from "@/components/push/week-preview";
 
 const PRIORITY_TABS = ["ALL", "P1", "STANDARD", "COLD"] as const;
 type PriorityTab = (typeof PRIORITY_TABS)[number];
+
+const SORT_OPTIONS = [
+  { value: "smart", label: "Priority + Due" },
+  { value: "due_asc", label: "Due ↑ (overdue first)" },
+  { value: "due_desc", label: "Due ↓ (latest first)" },
+  { value: "last_asc", label: "Last contact ↑ (longest silent)" },
+  { value: "last_desc", label: "Last contact ↓ (most recent)" },
+  { value: "touch_desc", label: "Touch # ↓ (closest to cold)" },
+  { value: "touch_asc", label: "Touch # ↑ (just started)" },
+] as const;
+type SortKey = (typeof SORT_OPTIONS)[number]["value"];
+
+const PRIORITY_RANK: Record<string, number> = { P1: 0, STANDARD: 1, COLD: 2 };
+
+function sortRows(rows: QueueRow[], key: SortKey): QueueRow[] {
+  const get = (d: string | null) => (d ? new Date(d).getTime() : null);
+  const arr = [...rows];
+  switch (key) {
+    case "smart":
+      arr.sort((a, b) => {
+        const pa = PRIORITY_RANK[a.priority] ?? 9;
+        const pb = PRIORITY_RANK[b.priority] ?? 9;
+        if (pa !== pb) return pa - pb;
+        return (get(a.nextTouchDueAt) ?? Infinity) - (get(b.nextTouchDueAt) ?? Infinity);
+      });
+      break;
+    case "due_asc":
+      arr.sort((a, b) => (get(a.nextTouchDueAt) ?? Infinity) - (get(b.nextTouchDueAt) ?? Infinity));
+      break;
+    case "due_desc":
+      arr.sort((a, b) => (get(b.nextTouchDueAt) ?? -Infinity) - (get(a.nextTouchDueAt) ?? -Infinity));
+      break;
+    case "last_asc":
+      arr.sort((a, b) => (get(a.lastTouchAt) ?? -Infinity) - (get(b.lastTouchAt) ?? -Infinity));
+      break;
+    case "last_desc":
+      arr.sort((a, b) => (get(b.lastTouchAt) ?? -Infinity) - (get(a.lastTouchAt) ?? -Infinity));
+      break;
+    case "touch_desc":
+      arr.sort((a, b) => b.currentTouch - a.currentTouch);
+      break;
+    case "touch_asc":
+      arr.sort((a, b) => a.currentTouch - b.currentTouch);
+      break;
+  }
+  return arr;
+}
 
 interface StatsData {
   week: { sent: number; replied: number; replyRate: number };
@@ -33,8 +80,11 @@ export default function PushSchedulerPage() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<PriorityTab>("ALL");
+  const [sortKey, setSortKey] = useState<SortKey>("smart");
   const [selected, setSelected] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+
+  const sortedToday = useMemo(() => sortRows(today, sortKey), [today, sortKey]);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -97,8 +147,8 @@ export default function PushSchedulerPage() {
         </div>
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-1 mb-4 border-b border-gray-200">
+      {/* Filter tabs + sort */}
+      <div className="flex gap-1 mb-4 border-b border-gray-200 items-center">
         {PRIORITY_TABS.map((t) => (
           <button
             key={t}
@@ -112,9 +162,23 @@ export default function PushSchedulerPage() {
             {t === "ALL" ? "Все" : t === "P1" ? "🔥 P1" : t === "STANDARD" ? "Standard" : "Cold"}
           </button>
         ))}
-        <span className="ml-auto self-center text-sm text-gray-500">
-          {loading ? "…" : `${today.length} в фокусе`}
-        </span>
+        <div className="ml-auto flex items-center gap-3 pb-1">
+          <span className="text-sm text-gray-500">
+            {loading ? "…" : `${today.length} в фокусе`}
+          </span>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-gray-500">Sort:</span>
+            <select
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {/* Layout: list | side cards */}
@@ -122,7 +186,7 @@ export default function PushSchedulerPage() {
         <div className="lg:col-span-2">
           <h2 className="text-sm font-semibold text-gray-700 mb-2">Сегодня нужно пушить</h2>
           <TodayList
-            rows={today}
+            rows={sortedToday}
             loading={loading}
             onSelect={setSelected}
             onSent={(id) => callAction(id, "sent")}

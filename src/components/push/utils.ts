@@ -62,3 +62,55 @@ export function daysSinceLabel(date: string | null | undefined): string {
   if (days === 1) return "1d";
   return `${days}d`;
 }
+
+/** Compact date format: "22 Apr" or "22 Apr 25" if year ≠ current. */
+export function shortDate(date: string | Date | null | undefined): string {
+  if (!date) return "—";
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (isNaN(d.getTime())) return "—";
+  const sameYear = d.getUTCFullYear() === new Date().getUTCFullYear();
+  return d.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(sameYear ? {} : { year: "2-digit" }),
+  });
+}
+
+/** "5d ago" / "today" / "yesterday". */
+export function pastRelative(date: string | Date | null | undefined): string {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days < 0) return "";
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  return `${days}d ago`;
+}
+
+/** "in 3d" / "Today" / "Tomorrow" / "5d overdue". */
+export function dueRelative(due: string | Date | null | undefined): string {
+  if (!due) return "—";
+  const d = typeof due === "string" ? new Date(due) : due;
+  const today = new Date();
+  const t0 = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const d0 = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const diff = Math.round((t0 - d0) / 86400000);
+  if (diff > 0) return `${diff}d overdue`;
+  if (diff === 0) return "Today";
+  if (diff === -1) return "Tomorrow";
+  return `in ${-diff}d`;
+}
+
+/** Color class for the relative due label. */
+export function dueRelativeColor(due: string | Date | null | undefined): string {
+  if (!due) return "text-gray-400";
+  const d = typeof due === "string" ? new Date(due) : due;
+  const today = new Date();
+  const t0 = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const d0 = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const diff = Math.round((t0 - d0) / 86400000);
+  if (diff > 0) return "text-red-600 font-semibold";
+  if (diff === 0) return "text-orange-600 font-semibold";
+  if (diff === -1) return "text-emerald-600";
+  return "text-gray-600";
+}
