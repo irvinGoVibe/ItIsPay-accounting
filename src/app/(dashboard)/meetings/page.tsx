@@ -10,11 +10,15 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  FileText,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDateTime } from "@/lib/utils";
+import { AddCallLogDialog } from "@/components/meetings/add-call-log-dialog";
+import { CreateMeetingDialog } from "@/components/meetings/create-meeting-dialog";
 
 interface Meeting {
   id: string;
@@ -37,6 +41,8 @@ export default function MeetingsPage() {
     message: string;
   } | null>(null);
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
+  const [callLogTarget, setCallLogTarget] = useState<Meeting | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     fetchMeetings();
@@ -103,19 +109,25 @@ export default function MeetingsPage() {
             {upcoming.length} upcoming, {past.length} past
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleSync}
-          disabled={syncing}
-        >
-          {syncing ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Calendar className="h-4 w-4" />
-          )}
-          {syncing ? "Syncing..." : "Sync Calendar"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" />
+            New meeting
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSync}
+            disabled={syncing}
+          >
+            {syncing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Calendar className="h-4 w-4" />
+            )}
+            {syncing ? "Syncing..." : "Sync Calendar"}
+          </Button>
+        </div>
       </div>
 
       {/* Sync result banner */}
@@ -232,6 +244,15 @@ export default function MeetingsPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setCallLogTarget(meeting)}
+                        title="Paste a transcript or notes; AI will extract key points"
+                      >
+                        <FileText className="h-3 w-3" />
+                        Add log
+                      </Button>
                       {meeting.lead && (
                         <Link href={`/leads/${meeting.lead.id}`}>
                           <Button variant="ghost" size="sm">
@@ -253,6 +274,21 @@ export default function MeetingsPage() {
           })
         )}
       </div>
+
+      {/* Dialogs */}
+      <AddCallLogDialog
+        open={callLogTarget !== null}
+        onClose={() => setCallLogTarget(null)}
+        meetingId={callLogTarget?.id ?? ""}
+        meetingTitle={callLogTarget?.title ?? ""}
+        leadFromMeeting={callLogTarget?.lead ?? null}
+        onSaved={fetchMeetings}
+      />
+      <CreateMeetingDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={fetchMeetings}
+      />
     </div>
   );
 }
