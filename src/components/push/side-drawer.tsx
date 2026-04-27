@@ -5,6 +5,13 @@ import Link from "next/link";
 import { X, Mail, Phone, Ban, Pause, Play, Send, MailQuestion, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { STATUS_BADGE, touchTypeLabel } from "./utils";
+import {
+  StarButton,
+  StatusSelect,
+  StageSelect,
+  ClassificationSelect,
+  useLeadQuickEdit,
+} from "./quick-actions";
 import type { TouchType } from "@/lib/push/cadence";
 
 interface DrawerData {
@@ -85,7 +92,6 @@ export function SideDrawer({ leadId, onClose, onAction }: Props) {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-semibold text-gray-900 truncate">{data.lead.name}</h2>
-                {data.lead.isActiveDeal && <span className="text-amber-500">★</span>}
                 {queue && (
                   <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[queue.status] || ""}`}>
                     {queue.status}
@@ -107,6 +113,9 @@ export function SideDrawer({ leadId, onClose, onAction }: Props) {
 
         {!data ? null : (
           <div className="p-6 space-y-6">
+            {/* Lead quick edit */}
+            <LeadQuickEdit lead={data.lead} onAfter={onAction} key={data.lead.id} />
+
             {/* Quick actions */}
             <div className="flex flex-wrap gap-2">
               <Button
@@ -247,5 +256,56 @@ function KV({ label, value }: { label: string; value: string }) {
       <div className="text-xs text-gray-500">{label}</div>
       <div className="text-sm font-medium text-gray-900 truncate">{value}</div>
     </div>
+  );
+}
+
+interface QuickEditLead {
+  id: string;
+  isActiveDeal: boolean;
+  status: string;
+  stage: string;
+  classification: string | null;
+}
+
+function LeadQuickEdit({ lead, onAfter }: { lead: QuickEditLead; onAfter: () => void }) {
+  const edit = useLeadQuickEdit(
+    {
+      id: lead.id,
+      isActiveDeal: lead.isActiveDeal,
+      status: lead.status,
+      stage: lead.stage,
+      classification: lead.classification,
+    },
+    onAfter
+  );
+
+  return (
+    <section className="rounded-lg border border-gray-200 p-4 bg-gray-50">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-700">Lead</h3>
+        {edit.pending && <span className="text-xs text-gray-500">saving…</span>}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+        <div>
+          <div className="text-xs text-gray-500 mb-1">Active deal</div>
+          <div className="flex items-center gap-2">
+            <StarButton active={edit.active} onChange={edit.setActive} size="md" />
+            <span className="text-sm text-gray-700">{edit.active ? "Yes" : "No"}</span>
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-gray-500 mb-1">Status</div>
+          <StatusSelect value={edit.status} onChange={edit.setStatus} size="md" />
+        </div>
+        <div>
+          <div className="text-xs text-gray-500 mb-1">Stage</div>
+          <StageSelect value={edit.stage} onChange={edit.setStage} />
+        </div>
+        <div>
+          <div className="text-xs text-gray-500 mb-1">Classification</div>
+          <ClassificationSelect value={edit.classification} onChange={edit.setClassification} />
+        </div>
+      </div>
+    </section>
   );
 }
