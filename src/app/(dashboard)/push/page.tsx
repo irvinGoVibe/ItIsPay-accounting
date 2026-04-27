@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, Database } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TodayList, type QueueRow } from "@/components/push/today-list";
 import { SideDrawer } from "@/components/push/side-drawer";
@@ -59,26 +59,19 @@ export default function PushSchedulerPage() {
     fetchAll();
   }
 
-  async function handleSeed() {
-    setSyncing(true);
-    try {
-      const r = await fetch("/api/push/seed", { method: "POST" });
-      const d = await r.json();
-      alert(`Seeded ${d.created} queues (scanned ${d.scanned} leads)`);
-      await fetchAll();
-    } finally {
-      setSyncing(false);
-    }
-  }
-
   async function handleSync() {
     setSyncing(true);
     try {
       const r = await fetch("/api/push/sync", { method: "POST" });
       const d = await r.json();
+      const seed = d.seed ?? { created: 0, scanned: 0 };
+      const sync = d.sync ?? {};
       alert(
-        `Sync done. Processed ${d.processed}. ` +
-        `Replied: ${d.repliedFlipped}, Cold: ${d.coldFlipped}, Priority updates: ${d.priorityUpdated}.`
+        `Sync done.\n` +
+        `Seeded: ${seed.created}/${seed.scanned} new leads.\n` +
+        `Recomputed: ${sync.recomputed}/${sync.processed} queues.\n` +
+        `Touches advanced: ${sync.touchesAdvanced ?? 0}\n` +
+        `Replied: ${sync.repliedFlipped ?? 0}, Cold: ${sync.coldFlipped ?? 0}, Priority: ${sync.priorityUpdated ?? 0}.`
       );
       await fetchAll();
     } finally {
@@ -97,11 +90,9 @@ export default function PushSchedulerPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleSeed} disabled={syncing}>
-            <Database className="h-4 w-4 mr-1.5" /> Seed
-          </Button>
-          <Button variant="outline" onClick={handleSync} disabled={syncing}>
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${syncing ? "animate-spin" : ""}`} /> Sync
+          <Button onClick={handleSync} disabled={syncing}>
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Syncing…" : "Sync now"}
           </Button>
         </div>
       </div>
