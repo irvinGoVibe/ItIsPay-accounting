@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { TOUCH_SCHEDULE, getTouchByNumber, nextDueDate, TOTAL_TOUCHES } from "@/lib/push/cadence";
+import { getTouchByNumber, nextDueDate, TOTAL_TOUCHES } from "@/lib/push/cadence";
 
 /**
  * POST /api/push/[leadId]/sent
@@ -26,6 +26,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ leadId:
   const nextTouchNumber = queue.currentTouch + 1;
   const touch = getTouchByNumber(nextTouchNumber);
   if (!touch) return NextResponse.json({ error: "Invalid touch" }, { status: 400 });
+
+  // Email touches are the source-of-truth: they are auto-detected by Gmail
+  // sync from the Email log. Manual marking would drift dates and double-count
+  // once the real email shows up. Reserve the manual button for off-channel
+  // touches (LinkedIn, phone, in-person).
+  if (touch.channel === "email") {
+    return NextResponse.json(
+      {
+        error:
+          "Email touches are auto-detected via Gmail sync. Send the email through Gmail and run Sync.",
+      },
+      { status: 400 }
+    );
+  }
 
   const now = new Date();
   const newNextDue = nextDueDate(nextTouchNumber, queue.startedAt);

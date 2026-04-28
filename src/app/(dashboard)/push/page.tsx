@@ -9,6 +9,7 @@ import { SideDrawer } from "@/components/push/side-drawer";
 import { StatsCard } from "@/components/push/stats-card";
 import { NewQueueCard } from "@/components/push/new-queue-card";
 import { WeekPreview } from "@/components/push/week-preview";
+import { PushAutoSync } from "@/components/push/push-auto-sync";
 
 const PRIORITY_TABS = ["ALL", "P1", "STANDARD", "COLD"] as const;
 type PriorityTab = (typeof PRIORITY_TABS)[number];
@@ -150,7 +151,8 @@ export default function PushSchedulerPage() {
             6 касаний за 21 день. Кого пушить сегодня и кого ставить в очередь.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-3 items-center">
+          <PushAutoSync onSynced={fetchAll} />
           <Button onClick={handleSync} disabled={syncing}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${syncing ? "animate-spin" : ""}`} />
             {syncing ? "Syncing…" : "Sync now"}

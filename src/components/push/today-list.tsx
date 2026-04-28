@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Check, X, ExternalLink } from "lucide-react";
+import { Check, X, ExternalLink, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getTouchByNumber } from "@/lib/push/cadence";
 import {
   PRIORITY_BADGE,
   PRIORITY_LABEL,
@@ -205,15 +206,32 @@ function Row({
       </div>
 
       {/* Actions */}
-      <div className="flex gap-1.5 shrink-0 justify-end pt-0.5">
-        <Button
-          size="sm"
-          onClick={(e) => { e.stopPropagation(); onSent(row.lead.id); }}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
-        >
-          <Check className="h-4 w-4 mr-1" />
-          Sent
-        </Button>
+      <div className="flex gap-1.5 shrink-0 justify-end pt-0.5 items-center">
+        {(() => {
+          const nextTouch = getTouchByNumber(row.currentTouch + 1);
+          const isEmailNext = nextTouch?.channel === "email";
+          if (isEmailNext) {
+            return (
+              <span
+                className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-medium text-gray-500"
+                title="Sent emails are detected automatically on Gmail sync"
+              >
+                <Mail className="h-3.5 w-3.5" />
+                Auto (Gmail)
+              </span>
+            );
+          }
+          return (
+            <Button
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); onSent(row.lead.id); }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+            >
+              <Check className="h-4 w-4 mr-1" />
+              Sent
+            </Button>
+          );
+        })()}
         <Button
           size="sm"
           variant="ghost"

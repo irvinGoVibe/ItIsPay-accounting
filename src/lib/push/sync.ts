@@ -2,10 +2,13 @@ import { prisma } from "@/lib/prisma";
 import { COLD_DAYS, TOTAL_TOUCHES, TOUCH_SCHEDULE } from "./cadence";
 import { computePriority } from "./priority";
 
+const TERMINAL_STATUSES = new Set(["DISQUALIFIED", "PAUSED", "QUALIFIED"]);
+
 /**
  * Recompute one queue's state from the Email table — the Email log is the
  * source of truth, the queue is a derived view.
  *
+ *   startedAt      = min(current startedAt, first outbound date)  (heal: locked for terminal states)
  *   currentTouch   = number of outbound emails since startedAt (capped at TOTAL_TOUCHES)
  *   lastTouchAt    = max(date) of those outbounds
  *   nextTouchDueAt = startedAt + TOUCH_SCHEDULE[currentTouch].day  (null if sequence complete)
@@ -21,11 +24,25 @@ async function recomputeQueueState(
   queue: { id: string; status: string; startedAt: Date; notes: string | null },
   lead: { id: string; isActiveDeal: boolean; stage: string; status: string }
 ) {
+  // Probe for the first-ever outbound to this lead. Used to heal startedAt
+  // when the queue was seeded before any real email had arrived.
+  const firstOutbound = await prisma.email.findFirst({
+    where: { leadId: lead.id, isInbound: false },
+    orderBy: { date: "asc" },
+    select: { date: true },
+  });
+
+  const isTerminal = TERMINAL_STATUSES.has(queue.status);
+  const effectiveStartedAt =
+    !isTerminal && firstOutbound && firstOutbound.date < queue.startedAt
+      ? firstOutbound.date
+      : queue.startedAt;
+
   const outbounds = await prisma.email.findMany({
     where: {
       leadId: lead.id,
       isInbound: false,
-      date: { gte: queue.startedAt },
+      date: { gte: effectiveStartedAt },
     },
     orderBy: { date: "asc" },
     select: { date: true },
@@ -37,12 +54,12 @@ async function recomputeQueueState(
   let nextTouchDueAt: Date | null = null;
   if (currentTouch < TOTAL_TOUCHES) {
     const next = TOUCH_SCHEDULE[currentTouch]; // [0]=touch1, [1]=touch2, …
-    nextTouchDueAt = new Date(queue.startedAt.getTime() + next.day * 86400000);
+    nextTouchDueAt = new Date(effectiveStartedAt.getTime() + next.day * 86400000);
   }
 
   // Inbound that counts as a "reply" must be AFTER our last contact event
   // (last touch if we sent something; otherwise after the queue was started).
-  const replyCutoff = lastTouchAt ?? queue.startedAt;
+  const replyCutoff = lastTouchAt ?? effectiveStartedAt;
   const lastInbound = await prisma.email.findFirst({
     where: { leadId: lead.id, isInbound: true, date: { gt: replyCutoff } },
     orderBy: { date: "desc" },
@@ -50,9 +67,8 @@ async function recomputeQueueState(
   });
 
   // Status (terminal states locked)
-  const TERMINAL = new Set(["DISQUALIFIED", "PAUSED", "QUALIFIED"]);
   let nextStatus = queue.status;
-  if (!TERMINAL.has(queue.status)) {
+  if (!isTerminal) {
     if (lastInbound) {
       nextStatus = "REPLIED";
     } else if (
@@ -73,6 +89,7 @@ async function recomputeQueueState(
   });
 
   return {
+    startedAt: effectiveStartedAt,
     currentTouch,
     lastTouchAt,
     nextTouchDueAt,
@@ -80,6 +97,7 @@ async function recomputeQueueState(
     priority,
     _hasNewReply: nextStatus === "REPLIED" && queue.status !== "REPLIED",
     _wentCold: nextStatus === "COLD" && queue.status !== "COLD",
+    _startedAtHealed: effectiveStartedAt.getTime() !== queue.startedAt.getTime(),
   };
 }
 
@@ -101,6 +119,7 @@ export async function syncPushQueues(userId: string) {
   let coldFlipped = 0;
   let priorityUpdated = 0;
   let touchesAdvanced = 0;
+  let reanchored = 0;
 
   for (const q of queues) {
     const next = await recomputeQueueState(
@@ -113,11 +132,13 @@ export async function syncPushQueues(userId: string) {
     const changedPriority = next.priority !== q.priority;
     const changedDue = (next.nextTouchDueAt?.getTime() ?? null) !== (q.nextTouchDueAt?.getTime() ?? null);
     const changedLast = (next.lastTouchAt?.getTime() ?? null) !== (q.lastTouchAt?.getTime() ?? null);
+    const changedStartedAt = next.startedAt.getTime() !== q.startedAt.getTime();
 
-    if (changedTouch || changedStatus || changedPriority || changedDue || changedLast) {
+    if (changedTouch || changedStatus || changedPriority || changedDue || changedLast || changedStartedAt) {
       await prisma.pushQueue.update({
         where: { id: q.id },
         data: {
+          startedAt: next.startedAt,
           currentTouch: next.currentTouch,
           lastTouchAt: next.lastTouchAt,
           nextTouchDueAt: next.nextTouchDueAt,
@@ -154,10 +175,22 @@ export async function syncPushQueues(userId: string) {
         });
         coldFlipped++;
       }
+      if (next._startedAtHealed) {
+        await prisma.pushEvent.create({
+          data: {
+            queueId: q.id,
+            touchNumber: next.currentTouch,
+            type: "FIRST",
+            action: "AUTO_REANCHOR",
+            notes: `startedAt healed to first outbound (${next.startedAt.toISOString()})`,
+          },
+        });
+        reanchored++;
+      }
     }
   }
 
-  return { processed: queues.length, recomputed, touchesAdvanced, repliedFlipped, coldFlipped, priorityUpdated };
+  return { processed: queues.length, recomputed, touchesAdvanced, repliedFlipped, coldFlipped, priorityUpdated, reanchored };
 }
 
 /**
@@ -208,6 +241,7 @@ export async function seedPushQueues(userId: string) {
     await prisma.pushQueue.update({
       where: { id: queue.id },
       data: {
+        startedAt: next.startedAt,
         currentTouch: next.currentTouch,
         lastTouchAt: next.lastTouchAt,
         nextTouchDueAt: next.nextTouchDueAt,

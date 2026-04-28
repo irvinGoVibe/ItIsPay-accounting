@@ -11,9 +11,11 @@ import {
   Ban,
   ArrowUpRight,
   Loader2,
+  Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getTouchByNumber } from "@/lib/push/cadence";
 
 interface PushQueue {
   id: string;
@@ -147,6 +149,8 @@ export function LeadPushCard({ leadId }: Props) {
   const isPaused = queue.status === "PAUSED";
   const isDisqualified = queue.status === "DISQUALIFIED";
   const progress = (queue.currentTouch / 6) * 100;
+  const nextTouch = getTouchByNumber(queue.currentTouch + 1);
+  const isEmailNext = nextTouch?.channel === "email";
 
   return (
     <Card>
@@ -205,16 +209,26 @@ export function LeadPushCard({ leadId }: Props) {
 
         {/* Actions */}
         {!isDisqualified && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            <Button
-              size="sm"
-              onClick={() => action("sent")}
-              disabled={sequenceComplete || busy !== null}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              <Check className="h-3.5 w-3.5 mr-1" />
-              Sent {!sequenceComplete && `(${queue.currentTouch + 1})`}
-            </Button>
+          <div className="flex flex-wrap gap-1.5 pt-1 items-center">
+            {isEmailNext && !sequenceComplete ? (
+              <span
+                className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-medium text-gray-500"
+                title="Sent emails are detected automatically on Gmail sync"
+              >
+                <Mail className="h-3.5 w-3.5" />
+                Auto (Gmail)
+              </span>
+            ) : (
+              <Button
+                size="sm"
+                onClick={() => action("sent")}
+                disabled={sequenceComplete || busy !== null}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                <Check className="h-3.5 w-3.5 mr-1" />
+                Sent {!sequenceComplete && `(${queue.currentTouch + 1})`}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"

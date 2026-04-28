@@ -12,7 +12,7 @@ import {
   ClassificationSelect,
   useLeadQuickEdit,
 } from "./quick-actions";
-import type { TouchType } from "@/lib/push/cadence";
+import { getTouchByNumber, type TouchType } from "@/lib/push/cadence";
 
 interface DrawerData {
   lead: {
@@ -117,14 +117,31 @@ export function SideDrawer({ leadId, onClose, onAction }: Props) {
             <LeadQuickEdit lead={data.lead} onAfter={onAction} key={data.lead.id} />
 
             {/* Quick actions */}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                onClick={() => callAction("sent")}
-                disabled={!queue || queue.currentTouch >= 6 || actioning !== null}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              >
-                <Check className="h-4 w-4 mr-1" /> Отправил touch {queue ? queue.currentTouch + 1 : ""}
-              </Button>
+            <div className="flex flex-wrap gap-2 items-center">
+              {(() => {
+                const nextTouch = queue ? getTouchByNumber(queue.currentTouch + 1) : null;
+                const isEmailNext = nextTouch?.channel === "email";
+                if (isEmailNext) {
+                  return (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-500"
+                      title="Sent emails are detected automatically on Gmail sync"
+                    >
+                      <Mail className="h-4 w-4" />
+                      Auto (Gmail)
+                    </span>
+                  );
+                }
+                return (
+                  <Button
+                    onClick={() => callAction("sent")}
+                    disabled={!queue || queue.currentTouch >= 6 || actioning !== null}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    <Check className="h-4 w-4 mr-1" /> Отправил touch {queue ? queue.currentTouch + 1 : ""}
+                  </Button>
+                );
+              })()}
               <Button
                 onClick={() => callAction("skip")}
                 disabled={!queue || queue.currentTouch >= 6 || actioning !== null}
