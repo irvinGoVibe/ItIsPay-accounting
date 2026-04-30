@@ -27,7 +27,25 @@ interface Lead {
 
 type ViewMode = "all" | "active";
 
-const STATUS_TABS = ["ALL", "NEW", "CONTACTED", "QUALIFIED", "PROPOSAL", "NEGOTIATION"] as const;
+const STATUS_TABS = [
+  "ALL",
+  "NEW",
+  "CONTACTED",
+  "PROPOSAL",
+  "NEGOTIATION",
+  "CLOSED_WON",
+  "CLOSED_LOST",
+] as const;
+
+const STATUS_TAB_LABELS: Record<(typeof STATUS_TABS)[number], string> = {
+  ALL: "All",
+  NEW: "New",
+  CONTACTED: "Contacted",
+  PROPOSAL: "Proposal",
+  NEGOTIATION: "Negotiation",
+  CLOSED_WON: "Won",
+  CLOSED_LOST: "Lost",
+};
 
 const classificationColors: Record<string, string> = {
   CLIENT: "bg-blue-100 text-blue-700",
@@ -171,19 +189,32 @@ export default function LeadsPage() {
       {/* Filters */}
       <div className="flex items-center gap-4">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {STATUS_TABS.map((status) => (
-            <button
-              key={status}
-              onClick={() => setActiveStatus(status)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
-                activeStatus === status
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              {status === "ALL" ? "All" : status.charAt(0) + status.slice(1).toLowerCase()}
-            </button>
-          ))}
+          {STATUS_TABS.map((status) => {
+            const isActive = activeStatus === status;
+            // Soft color hints for the terminal stages so Won/Lost group visually
+            // as "Closed" without occupying a separate dropdown.
+            const accent =
+              status === "CLOSED_WON"
+                ? isActive
+                  ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 shadow-sm"
+                  : "text-emerald-600 hover:text-emerald-700"
+                : status === "CLOSED_LOST"
+                ? isActive
+                  ? "bg-red-50 text-red-700 ring-1 ring-red-200 shadow-sm"
+                  : "text-red-600 hover:text-red-700"
+                : isActive
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-600 hover:text-gray-900";
+            return (
+              <button
+                key={status}
+                onClick={() => setActiveStatus(status)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${accent}`}
+              >
+                {STATUS_TAB_LABELS[status]}
+              </button>
+            );
+          })}
         </div>
         <select
           value={activeClassification}
